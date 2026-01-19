@@ -1,3 +1,16 @@
+# 1. Delete broken YOLOv11 files (9-byte files)
+del yolo11*.pt
+
+# 2. Download YOLOv11 pretrained weights correctly
+curl -L -o yolo11n.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11n.pt
+curl -L -o yolo11s.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11s.pt
+curl -L -o yolo11m.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11m.pt
+curl -L -o yolo11l.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11l.pt
+curl -L -o yolo11x.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11x.pt
+
+# 3. Verify file sizes
+dir yolo11*.pt
+
 mkdir yolo_weights
 cd yolo_weights
 

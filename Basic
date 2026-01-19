@@ -1,5 +1,26 @@
-# 1. Delete broken YOLOv11 files (9-byte files)
-del yolo11*.pt
+pip install -U huggingface_hub
+
+python - <<EOF
+from huggingface_hub import hf_hub_download
+
+models = [
+    "yolo11n.pt",
+    "yolo11s.pt",
+    "yolo11m.pt",
+    "yolo11l.pt",
+    "yolo11x.pt"
+]
+
+for m in models:
+    hf_hub_download(
+        repo_id="Ultralytics/YOLO11",
+        filename=m,
+        local_dir=".",
+        local_dir_use_symlinks=False
+    )
+    print(f"Downloaded {m}")
+EOF
+
 
 # 2. Download YOLOv11 pretrained weights correctly
 curl -L -o yolo11n.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11n.pt

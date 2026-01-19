@@ -1,4 +1,147 @@
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-venv\Scripts\Activate.ps1
-(venv) PS C:\Users\<your-username>\Documents\engineering_drawing_ai>
-pip install torch ultralytics opencv-python pillow numpy transformers datasets pdf2image
+ultralytics
+torch
+torchvision
+opencv-python
+pillow
+numpy
+matplotlib
+pdf2image
+pytesseract
+transformers
+accelerate
+sentencepiece
+
+
+pip install -r requirements.txt
+
+from pdf2image import convert_from_path
+import os
+
+def pdf_to_images(pdf_path, out_dir, dpi=300):
+    os.makedirs(out_dir, exist_ok=True)
+    pages = convert_from_path(pdf_path, dpi=dpi)
+
+    image_paths = []
+    for i, page in enumerate(pages):
+        img_path = os.path.join(out_dir, f"page_{i}.png")
+        page.save(img_path, "PNG")
+        image_paths.append(img_path)
+
+    return image_paths
+
+from ultralytics import YOLO
+import os
+
+class LayoutDetector:
+    def __init__(self, model_path):
+        self.model = YOLO(model_path)
+
+    def detect(self, image_path, out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+        results = self.model(image_path)
+
+        layout_data = []
+        for r in results:
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                label = self.model.names[cls]
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+                layout_data.append({
+                    "category": label,
+                    "bbox": [x1, y1, x2, y2]
+                })
+
+        return layout_data
+
+from ultralytics import YOLO
+
+class AnnotationDetector:
+    def __init__(self, model_path):
+        self.model = YOLO(model_path)
+
+    def detect(self, image_path):
+        results = self.model(image_path)
+
+        annotations = []
+        for r in results:
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                label = self.model.names[cls]
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+                annotations.append({
+                    "type": label,
+                    "bbox": [x1, y1, x2, y2]
+                })
+
+        return annotations
+
+from transformers import DonutProcessor, VisionEncoderDecoderModel
+from PIL import Image
+import torch
+
+class AlphabeticalVLM:
+    def __init__(self):
+        self.processor = DonutProcessor.from_pretrained(
+            "naver-clova-ix/donut-base"
+        )
+        self.model = VisionEncoderDecoderModel.from_pretrained(
+            "naver-clova-ix/donut-base"
+        )
+
+    def parse(self, image_path):
+        image = Image.open(image_path).convert("RGB")
+        pixel_values = self.processor(image, return_tensors="pt").pixel_values
+
+        outputs = self.model.generate(pixel_values)
+        text = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+        return {"text": text}
+
+
+class NumericalVLM(AlphabeticalVLM):
+    pass
+
+
+
+from pdf_utils import pdf_to_images
+from stage1_layout_detection import LayoutDetector
+from stage2_annotation_detection import AnnotationDetector
+from stage3_vlm_parsing import AlphabeticalVLM, NumericalVLM
+import json
+
+PDF_PATH = "input/drawing.pdf"
+
+def main():
+    pages = pdf_to_images(PDF_PATH, "output/pages")
+
+    layout_model = LayoutDetector("models/yolo_layout.pt")
+    annotation_model = AnnotationDetector("models/yolo_obb.pt")
+
+    alpha_vlm = AlphabeticalVLM()
+    num_vlm = NumericalVLM()
+
+    final_output = {}
+
+    for page in pages:
+        layout = layout_model.detect(page, "output/stage1_layout")
+        annotations = annotation_model.detect(page)
+
+        text_info = alpha_vlm.parse(page)
+        numeric_info = num_vlm.parse(page)
+
+        final_output[page] = {
+            "layout": layout,
+            "annotations": annotations,
+            "text": text_info,
+            "numerical": numeric_info
+        }
+
+    with open("output/result.json", "w") as f:
+        json.dump(final_output, f, indent=2)
+
+    print("Pipeline completed. JSON generated.")
+
+if __name__ == "__main__":
+    main()

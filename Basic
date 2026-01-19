@@ -33,8 +33,12 @@ from ultralytics import YOLO
 import os
 
 class LayoutDetector:
-    def __init__(self, model_path):
-        self.model = YOLO(model_path)
+    def __init__(self, model_path=None):
+        if model_path and os.path.exists(model_path):
+            self.model = YOLO(model_path)
+        else:
+            print("[INFO] Using default YOLOv8n model for layout (placeholder)")
+            self.model = YOLO("yolov8n.pt")
 
     def detect(self, image_path, out_dir):
         os.makedirs(out_dir, exist_ok=True)
@@ -55,10 +59,15 @@ class LayoutDetector:
         return layout_data
 
 from ultralytics import YOLO
+import os
 
 class AnnotationDetector:
-    def __init__(self, model_path):
-        self.model = YOLO(model_path)
+    def __init__(self, model_path=None):
+        if model_path and os.path.exists(model_path):
+            self.model = YOLO(model_path)
+        else:
+            print("[INFO] Using default YOLOv8n model for annotations (placeholder)")
+            self.model = YOLO("yolov8n.pt")
 
     def detect(self, image_path):
         results = self.model(image_path)
@@ -116,8 +125,8 @@ PDF_PATH = "input/drawing.pdf"
 def main():
     pages = pdf_to_images(PDF_PATH, "output/pages")
 
-    layout_model = LayoutDetector("models/yolo_layout.pt")
-    annotation_model = AnnotationDetector("models/yolo_obb.pt")
+layout_model = LayoutDetector()
+annotation_model = AnnotationDetector()
 
     alpha_vlm = AlphabeticalVLM()
     num_vlm = NumericalVLM()

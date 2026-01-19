@@ -1,21 +1,26 @@
-from pdf2image import convert_from_path
+pip uninstall pdf2image -y
+pip install pymupdf
+
+python -c "import fitz; print('PyMuPDF OK')"
+
+
+import fitz  # PyMuPDF
 import os
 
-def pdf_to_png(pdf_path, output_dir="data/images"):
-    os.makedirs(output_dir, exist_ok=True)
-    pages = convert_from_path(pdf_path, dpi=300)
+def pdf_to_images(pdf_path, out_dir, dpi=300):
+    os.makedirs(out_dir, exist_ok=True)
 
+    doc = fitz.open(pdf_path)
     image_paths = []
-    for i, page in enumerate(pages):
-        path = f"{output_dir}/page_{i}.png"
-        page.save(path, "PNG")
-        image_paths.append(path)
 
+    zoom = dpi / 72  # PDF default is 72 DPI
+    mat = fitz.Matrix(zoom, zoom)
+
+    for i, page in enumerate(doc):
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img_path = os.path.join(out_dir, f"page_{i}.png")
+        pix.save(img_path)
+        image_paths.append(img_path)
+
+    doc.close()
     return image_paths
-
-# test_pdf.py
-from utils.pdf_to_image import pdf_to_png
-
-imgs = pdf_to_png("sample_drawing.pdf")
-print(imgs)
-

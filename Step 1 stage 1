@@ -1,0 +1,21 @@
+from pdf2image import convert_from_path
+import os
+
+def pdf_to_png(pdf_path, output_dir="data/images"):
+    os.makedirs(output_dir, exist_ok=True)
+    pages = convert_from_path(pdf_path, dpi=300)
+
+    image_paths = []
+    for i, page in enumerate(pages):
+        path = f"{output_dir}/page_{i}.png"
+        page.save(path, "PNG")
+        image_paths.append(path)
+
+    return image_paths
+
+# test_pdf.py
+from utils.pdf_to_image import pdf_to_png
+
+imgs = pdf_to_png("sample_drawing.pdf")
+print(imgs)
+

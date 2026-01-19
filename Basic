@@ -1,10 +1,11 @@
-yolov8_weights.zip
+mkdir yolo_weights
+cd yolo_weights
 
-yolov8n.pt
-yolov8s.pt
-yolov8m.pt
-yolov8l.pt
-yolov8x.pt
+curl -L -o yolov8n.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+curl -L -o yolov8s.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt
+curl -L -o yolov8m.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt
+curl -L -o yolov8l.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8l.pt
+curl -L -o yolov8x.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x.pt
 
 ultralytics
 torch

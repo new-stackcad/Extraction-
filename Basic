@@ -1,3 +1,11 @@
+yolov8_weights.zip
+
+yolov8n.pt
+yolov8s.pt
+yolov8m.pt
+yolov8l.pt
+yolov8x.pt
+
 ultralytics
 torch
 torchvision

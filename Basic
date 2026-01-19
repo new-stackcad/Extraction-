@@ -1,3 +1,4 @@
-venv\Scripts\activate
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+venv\Scripts\Activate.ps1
 (venv) PS C:\Users\<your-username>\Documents\engineering_drawing_ai>
 pip install torch ultralytics opencv-python pillow numpy transformers datasets pdf2image

@@ -7,6 +7,14 @@ curl -L -o yolov8m.pt https://github.com/ultralytics/assets/releases/download/v8
 curl -L -o yolov8l.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8l.pt
 curl -L -o yolov8x.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x.pt
 
+curl -L -o yolo11n.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11n.pt
+curl -L -o yolo11s.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11s.pt
+curl -L -o yolo11m.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11m.pt
+curl -L -o yolo11l.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11l.pt
+curl -L -o yolo11x.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11x.pt
+
+ls -lh *.pt
+
 ultralytics
 torch
 torchvision

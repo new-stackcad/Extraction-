@@ -1,209 +1,147 @@
 https://1drv.ms/p/c/69187d6452360368/IQAN3DJvPSNMT7sQb_8OJovIARu9tyUNJ6jluG3ft0LOI3Y?e=OAPpcp
 
-pip install -U huggingface_hub
+pip install numpy matplotlib scikit-image scipy
 
-python - <<EOF
-from huggingface_hub import hf_hub_download
-
-models = [
-    "yolo11n.pt",
-    "yolo11s.pt",
-    "yolo11m.pt",
-    "yolo11l.pt",
-    "yolo11x.pt"
-]
-
-for m in models:
-    hf_hub_download(
-        repo_id="Ultralytics/YOLO11",
-        filename=m,
-        local_dir=".",
-        local_dir_use_symlinks=False
-    )
-    print(f"Downloaded {m}")
-EOF
-
-
-# 2. Download YOLOv11 pretrained weights correctly
-curl -L -o yolo11n.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11n.pt
-curl -L -o yolo11s.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11s.pt
-curl -L -o yolo11m.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11m.pt
-curl -L -o yolo11l.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11l.pt
-curl -L -o yolo11x.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11x.pt
-
-# 3. Verify file sizes
-dir yolo11*.pt
-
-mkdir yolo_weights
-cd yolo_weights
-
-curl -L -o yolov8n.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
-curl -L -o yolov8s.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt
-curl -L -o yolov8m.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt
-curl -L -o yolov8l.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8l.pt
-curl -L -o yolov8x.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x.pt
-
-curl -L -o yolo11n.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11n.pt
-curl -L -o yolo11s.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11s.pt
-curl -L -o yolo11m.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11m.pt
-curl -L -o yolo11l.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11l.pt
-curl -L -o yolo11x.pt https://github.com/ultralytics/assets/releases/download/v11.0.0/yolo11x.pt
-
-ls -lh *.pt
-
-ultralytics
-torch
-torchvision
-opencv-python
-pillow
-numpy
-matplotlib
-pdf2image
-pytesseract
-transformers
-accelerate
-sentencepiece
-
-
-pip install -r requirements.txt
-
-from pdf2image import convert_from_path
-import os
-
-def pdf_to_images(pdf_path, out_dir, dpi=300):
-    os.makedirs(out_dir, exist_ok=True)
-    pages = convert_from_path(pdf_path, dpi=dpi)
-
-    image_paths = []
-    for i, page in enumerate(pages):
-        img_path = os.path.join(out_dir, f"page_{i}.png")
-        page.save(img_path, "PNG")
-        image_paths.append(img_path)
-
-    return image_paths
-
-from ultralytics import YOLO
-import os
-
-class LayoutDetector:
-    def __init__(self, model_path=None):
-        if model_path and os.path.exists(model_path):
-            self.model = YOLO(model_path)
-        else:
-            print("[INFO] Using default YOLOv8n model for layout (placeholder)")
-            self.model = YOLO("yolov8n.pt")
-
-    def detect(self, image_path, out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-        results = self.model(image_path)
-
-        layout_data = []
-        for r in results:
-            for box in r.boxes:
-                cls = int(box.cls[0])
-                label = self.model.names[cls]
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-                layout_data.append({
-                    "category": label,
-                    "bbox": [x1, y1, x2, y2]
-                })
-
-        return layout_data
-
-from ultralytics import YOLO
-import os
-
-class AnnotationDetector:
-    def __init__(self, model_path=None):
-        if model_path and os.path.exists(model_path):
-            self.model = YOLO(model_path)
-        else:
-            print("[INFO] Using default YOLOv8n model for annotations (placeholder)")
-            self.model = YOLO("yolov8n.pt")
-
-    def detect(self, image_path):
-        results = self.model(image_path)
-
-        annotations = []
-        for r in results:
-            for box in r.boxes:
-                cls = int(box.cls[0])
-                label = self.model.names[cls]
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-                annotations.append({
-                    "type": label,
-                    "bbox": [x1, y1, x2, y2]
-                })
-
-        return annotations
-
-from transformers import DonutProcessor, VisionEncoderDecoderModel
-from PIL import Image
-import torch
-
-class AlphabeticalVLM:
-    def __init__(self):
-        self.processor = DonutProcessor.from_pretrained(
-            "naver-clova-ix/donut-base"
-        )
-        self.model = VisionEncoderDecoderModel.from_pretrained(
-            "naver-clova-ix/donut-base"
-        )
-
-    def parse(self, image_path):
-        image = Image.open(image_path).convert("RGB")
-        pixel_values = self.processor(image, return_tensors="pt").pixel_values
-
-        outputs = self.model.generate(pixel_values)
-        text = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-        return {"text": text}
-
-
-class NumericalVLM(AlphabeticalVLM):
-    pass
-
-
-
-from pdf_utils import pdf_to_images
-from stage1_layout_detection import LayoutDetector
-from stage2_annotation_detection import AnnotationDetector
-from stage3_vlm_parsing import AlphabeticalVLM, NumericalVLM
 import json
+import numpy as np
+import matplotlib.pyplot as plt
 
-PDF_PATH = "input/drawing.pdf"
+from skimage import io, color, filters, morphology
+from scipy.spatial.distance import euclidean
 
-def main():
-    pages = pdf_to_images(PDF_PATH, "output/pages")
+# ==============================
+# INPUT
+# ==============================
+IMAGE_PATH = "input_crop.png"   # <-- your cropped PNG/JPG
+OUTPUT_JSON = "vectorized_output.json"
 
-layout_model = LayoutDetector()
-annotation_model = AnnotationDetector()
+# ==============================
+# 1. LOAD + BINARIZE IMAGE
+# ==============================
+img = io.imread(IMAGE_PATH)
 
-    alpha_vlm = AlphabeticalVLM()
-    num_vlm = NumericalVLM()
+if img.ndim == 3:
+    img_gray = color.rgb2gray(img)
+else:
+    img_gray = img.astype(float) / 255.0
 
-    final_output = {}
+thresh = filters.threshold_otsu(img_gray)
+binary = img_gray < thresh
 
-    for page in pages:
-        layout = layout_model.detect(page, "output/stage1_layout")
-        annotations = annotation_model.detect(page)
+# ==============================
+# 2. SKELETONIZATION
+# ==============================
+skeleton = morphology.skeletonize(binary)
 
-        text_info = alpha_vlm.parse(page)
-        numeric_info = num_vlm.parse(page)
+# ==============================
+# 3. TRACE EXTRACTION
+# ==============================
+def neighbors(p):
+    x, y = p
+    return [(x+i, y+j) for i in [-1,0,1] for j in [-1,0,1]
+            if not (i==0 and j==0)]
 
-        final_output[page] = {
-            "layout": layout,
-            "annotations": annotations,
-            "text": text_info,
-            "numerical": numeric_info
+def valid(p, skel):
+    x, y = p
+    return 0 <= x < skel.shape[0] and 0 <= y < skel.shape[1] and skel[x,y]
+
+visited = set()
+traces = []
+
+for x in range(skeleton.shape[0]):
+    for y in range(skeleton.shape[1]):
+        if skeleton[x,y] and (x,y) not in visited:
+            trace = [(x,y)]
+            visited.add((x,y))
+            cur = (x,y)
+
+            while True:
+                nbrs = [p for p in neighbors(cur)
+                        if valid(p, skeleton) and p not in visited]
+                if len(nbrs) != 1:
+                    break
+                cur = nbrs[0]
+                trace.append(cur)
+                visited.add(cur)
+
+            traces.append(trace)
+
+# ==============================
+# 4. REMOVE SMALL TRACES
+# ==============================
+traces = [t for t in traces if len(t) >= 4]
+
+# ==============================
+# 5. CUBIC BEZIER FITTING
+# ==============================
+def fit_cubic_bezier(points):
+    points = np.array(points)
+    m = len(points)
+    t = np.linspace(0, 1, m)
+
+    B = np.column_stack([
+        (1 - t)**3,
+        3*t*(1 - t)**2,
+        3*(t**2)*(1 - t),
+        t**3
+    ])
+
+    P0 = points[0]
+    P3 = points[-1]
+
+    B_mid = B[:, 1:3]
+    rhs = points - np.outer(B[:,0], P0) - np.outer(B[:,3], P3)
+
+    ctrl_mid, _, _, _ = np.linalg.lstsq(B_mid, rhs, rcond=None)
+    P1, P2 = ctrl_mid
+
+    return np.vstack([P0, P1, P2, P3])
+
+beziers = [fit_cubic_bezier(t) for t in traces]
+
+# ==============================
+# 6. FEATURE EXTRACTION
+# ==============================
+features = []
+
+for bz in beziers:
+    length = sum(euclidean(bz[i], bz[i+1]) for i in range(3))
+    direction = (bz[-1] - bz[0]).tolist()
+    curvature_proxy = euclidean(bz[1], bz[2])
+
+    features.append({
+        "length": float(length),
+        "direction": direction,
+        "curvature_proxy": float(curvature_proxy)
+    })
+
+# ==============================
+# 7. VISUALIZATION
+# ==============================
+plt.figure(figsize=(6,6))
+plt.imshow(img_gray, cmap="gray")
+for bz in beziers:
+    bz = np.array(bz)
+    plt.plot(bz[:,1], bz[:,0], 'r')
+plt.title("Vectorized Cubic Bezier Curves")
+plt.axis("off")
+plt.show()
+
+# ==============================
+# 8. SAVE JSON
+# ==============================
+output = {
+    "num_components": len(beziers),
+    "components": [
+        {
+            "control_points": bz.tolist(),
+            "features": feat
         }
+        for bz, feat in zip(beziers, features)
+    ]
+}
 
-    with open("output/result.json", "w") as f:
-        json.dump(final_output, f, indent=2)
+with open(OUTPUT_JSON, "w") as f:
+    json.dump(output, f, indent=2)
 
-    print("Pipeline completed. JSON generated.")
-
-if __name__ == "__main__":
-    main()
+print(f"Vectorization complete. Saved to {OUTPUT_JSON}")

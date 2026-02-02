@@ -9,139 +9,172 @@ import matplotlib.pyplot as plt
 from skimage import io, color, filters, morphology
 from scipy.spatial.distance import euclidean
 
-# ==============================
+# ======================
 # INPUT
-# ==============================
-IMAGE_PATH = "input_crop.png"   # <-- your cropped PNG/JPG
+# ======================
+IMAGE_PATH = "input_crop.png"
 OUTPUT_JSON = "vectorized_output.json"
 
-# ==============================
-# 1. LOAD + BINARIZE IMAGE
-# ==============================
+# ======================
+# 1. LOAD & BINARIZE
+# ======================
 img = io.imread(IMAGE_PATH)
-
 if img.ndim == 3:
     img_gray = color.rgb2gray(img)
 else:
     img_gray = img.astype(float) / 255.0
 
-thresh = filters.threshold_otsu(img_gray)
-binary = img_gray < thresh
+binary = img_gray < filters.threshold_otsu(img_gray)
 
-# ==============================
+# ======================
 # 2. SKELETONIZATION
-# ==============================
-skeleton = morphology.skeletonize(binary)
+# ======================
+skel = morphology.skeletonize(binary)
 
-# ==============================
-# 3. TRACE EXTRACTION
-# ==============================
+# ======================
+# 3. PIXEL DEGREE CLASSIFICATION
+# ======================
 def neighbors(p):
     x, y = p
     return [(x+i, y+j) for i in [-1,0,1] for j in [-1,0,1]
             if not (i==0 and j==0)]
 
-def valid(p, skel):
+def valid(p):
     x, y = p
     return 0 <= x < skel.shape[0] and 0 <= y < skel.shape[1] and skel[x,y]
 
+pixel_degree = {}
+pixels = np.argwhere(skel)
+
+for x, y in pixels:
+    count = sum(valid(p) for p in neighbors((x,y)))
+    pixel_degree[(x,y)] = count
+
+endpoints = {p for p,d in pixel_degree.items() if d == 1}
+junctions = {p for p,d in pixel_degree.items() if d >= 3}
+
+# ======================
+# 4. TRACE EXTRACTION (endpoint ↔ junction)
+# ======================
 visited = set()
 traces = []
 
-for x in range(skeleton.shape[0]):
-    for y in range(skeleton.shape[1]):
-        if skeleton[x,y] and (x,y) not in visited:
-            trace = [(x,y)]
-            visited.add((x,y))
-            cur = (x,y)
+def walk_trace(start):
+    trace = [start]
+    visited.add(start)
+    cur = start
 
-            while True:
-                nbrs = [p for p in neighbors(cur)
-                        if valid(p, skeleton) and p not in visited]
-                if len(nbrs) != 1:
-                    break
-                cur = nbrs[0]
-                trace.append(cur)
-                visited.add(cur)
+    while True:
+        nbrs = [p for p in neighbors(cur)
+                if valid(p) and p not in visited]
+        if len(nbrs) != 1:
+            break
+        nxt = nbrs[0]
+        trace.append(nxt)
+        visited.add(nxt)
+        cur = nxt
+        if cur in junctions:
+            break
+    return trace
 
-            traces.append(trace)
+for p in endpoints.union(junctions):
+    if p not in visited:
+        tr = walk_trace(p)
+        if len(tr) >= 2:
+            traces.append(tr)
 
-# ==============================
-# 4. REMOVE SMALL TRACES
-# ==============================
-traces = [t for t in traces if len(t) >= 4]
+# ======================
+# 5. CORNER DETECTION & SPLITTING
+# ======================
+def split_at_corners(trace):
+    if len(trace) < 6:
+        return [trace]
 
-# ==============================
-# 5. CUBIC BEZIER FITTING
-# ==============================
-def fit_cubic_bezier(points):
-    points = np.array(points)
-    m = len(points)
-    t = np.linspace(0, 1, m)
+    pts = np.array(trace)
+    angles = []
+
+    for i in range(1, len(pts)-1):
+        v1 = pts[i-1] - pts[i]
+        v2 = pts[i+1] - pts[i]
+        cosang = np.dot(v1, v2) / (np.linalg.norm(v1)*np.linalg.norm(v2) + 1e-6)
+        angles.append(np.arccos(np.clip(cosang, -1, 1)))
+
+    angles = np.array(angles)
+    second_deriv = np.diff(angles, n=2)
+
+    splits = np.where(second_deriv > 0.5)[0] + 2
+    if len(splits) == 0:
+        return [trace]
+
+    pieces = []
+    prev = 0
+    for s in splits:
+        pieces.append(trace[prev:s])
+        prev = s
+    pieces.append(trace[prev:])
+
+    return [p for p in pieces if len(p) >= 4]
+
+final_traces = []
+for t in traces:
+    final_traces.extend(split_at_corners(t))
+
+# ======================
+# 6. CUBIC BEZIER FITTING
+# ======================
+def fit_bezier(trace):
+    pts = np.array(trace)
+    d = np.cumsum([0] + [euclidean(pts[i], pts[i-1]) for i in range(1,len(pts))])
+    t = d / d[-1]
 
     B = np.column_stack([
-        (1 - t)**3,
-        3*t*(1 - t)**2,
-        3*(t**2)*(1 - t),
+        (1-t)**3,
+        3*t*(1-t)**2,
+        3*t**2*(1-t),
         t**3
     ])
 
-    P0 = points[0]
-    P3 = points[-1]
+    P0, P3 = pts[0], pts[-1]
+    rhs = pts - np.outer(B[:,0],P0) - np.outer(B[:,3],P3)
+    ctrl, *_ = np.linalg.lstsq(B[:,1:3], rhs, rcond=None)
 
-    B_mid = B[:, 1:3]
-    rhs = points - np.outer(B[:,0], P0) - np.outer(B[:,3], P3)
+    return np.vstack([P0, ctrl[0], ctrl[1], P3])
 
-    ctrl_mid, _, _, _ = np.linalg.lstsq(B_mid, rhs, rcond=None)
-    P1, P2 = ctrl_mid
+beziers = [fit_bezier(t) for t in final_traces]
 
-    return np.vstack([P0, P1, P2, P3])
-
-beziers = [fit_cubic_bezier(t) for t in traces]
-
-# ==============================
-# 6. FEATURE EXTRACTION
-# ==============================
-features = []
-
+# ======================
+# 7. FEATURE LABELS
+# ======================
+components = []
 for bz in beziers:
     length = sum(euclidean(bz[i], bz[i+1]) for i in range(3))
-    direction = (bz[-1] - bz[0]).tolist()
-    curvature_proxy = euclidean(bz[1], bz[2])
+    curvature = euclidean(bz[1], bz[2])
 
-    features.append({
+    geom_type = "line" if curvature < 2 else "curve"
+
+    components.append({
+        "control_points": bz.tolist(),
         "length": float(length),
-        "direction": direction,
-        "curvature_proxy": float(curvature_proxy)
+        "curvature": float(curvature),
+        "type": geom_type
     })
 
-# ==============================
-# 7. VISUALIZATION
-# ==============================
+# ======================
+# 8. VISUALIZATION
+# ======================
 plt.figure(figsize=(6,6))
 plt.imshow(img_gray, cmap="gray")
 for bz in beziers:
     bz = np.array(bz)
     plt.plot(bz[:,1], bz[:,0], 'r')
-plt.title("Vectorized Cubic Bezier Curves")
+plt.title("Proper Vectorization (Section 3.1)")
 plt.axis("off")
 plt.show()
 
-# ==============================
-# 8. SAVE JSON
-# ==============================
-output = {
-    "num_components": len(beziers),
-    "components": [
-        {
-            "control_points": bz.tolist(),
-            "features": feat
-        }
-        for bz, feat in zip(beziers, features)
-    ]
-}
-
+# ======================
+# 9. SAVE JSON
+# ======================
 with open(OUTPUT_JSON, "w") as f:
-    json.dump(output, f, indent=2)
+    json.dump({"components": components}, f, indent=2)
 
-print(f"Vectorization complete. Saved to {OUTPUT_JSON}")
+print("Vectorization complete.")

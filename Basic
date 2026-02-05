@@ -1,5 +1,186 @@
 https://1drv.ms/p/c/69187d6452360368/IQAN3DJvPSNMT7sQb_8OJovIARu9tyUNJ6jluG3ft0LOI3Y?e=OAPpcp
 
+No hard-coded rules.
+No engineering physics.
+Only drawing correctness, clarity, and compliance.
+
+⸻
+
+1️⃣ Input Layer: DXF / PDF Handling
+
+What this layer does
+	•	Accepts DXF, PDF, or both
+	•	Identifies what information is available from which format
+
+Tasks
+	•	DXF parsing (geometry, dimensions, symbols)
+	•	PDF parsing (text, layout, tables, symbols)
+	•	Fallback logic if one format is missing
+
+Time Estimate
+
+⏱ 1.5 – 2 weeks
+
+This is foundational. Don’t rush it.
+
+⸻
+
+2️⃣ Unified Drawing Representation (Very Important)
+
+Purpose
+
+Convert DXF + PDF into a common internal model, so the rest of the system does not care about format.
+
+Internal representation includes:
+	•	Views (front/top/side/section)
+	•	Geometry features (holes, edges, fillets – inferred, not validated)
+	•	Dimensions & tolerances
+	•	Notes & annotations
+	•	Symbols (GD&T, welding, surface finish)
+	•	Title block fields
+	•	Revision table
+	•	BOM references (if present)
+
+Tasks
+	•	Define a drawing schema
+	•	Map DXF entities and PDF elements to this schema
+	•	Track confidence (certain vs inferred)
+
+Time Estimate
+
+⏱ 1 week
+
+This is where many projects fail if not done cleanly.
+
+⸻
+
+3️⃣ Drawing Element Extraction (WHAT exists?)
+
+Scope (strictly drawing-level)
+	•	Missing / present dimensions
+	•	Duplicate dimensions
+	•	Dimension clashes
+	•	View alignment
+	•	Projection type
+	•	Required views present
+	•	Symbols present or absent
+	•	Notes present and readable
+
+Tasks
+	•	Extract dimensions per view
+	•	Associate dimensions with geometry visually/positionally
+	•	Detect text blocks (material, standards, coating, torque)
+
+Checklist items covered
+
+✔ Avoid dimensions missing
+✔ Avoid duplicate dimensioning
+✔ Views and dimensions inside template
+✔ Angle of projection
+✔ Welding / machining symbols
+✔ Material / surface protection notes
+
+Time Estimate
+
+⏱ 2 weeks
+
+⸻
+
+4️⃣ Drawing Reasoning Layer (HOW it is communicated?)
+
+This is where you stop being a parser and become a checker.
+
+Responsibilities
+	•	Identify essential vs non-essential dimensions (drawing logic, not physics)
+	•	Detect inconsistent information across views
+	•	Reason about:
+	•	Section view necessity
+	•	Accessibility (visual, not force-based)
+	•	Assembly clarity
+	•	Identify checklist items requiring judgment
+
+Tasks
+	•	Feature grouping (holes, slots, patterns)
+	•	Cross-view comparison
+	•	Heuristic reasoning (e.g., internal feature without section view)
+
+Checklist items covered
+
+✔ Essential dimensions
+✔ Accessibility
+✔ Assembly layout
+✔ Ease of dismantling
+✔ Interchangeability (drawing-level)
+
+Time Estimate
+
+⏱ 2 – 3 weeks
+
+This is the core intellectual contribution.
+
+⸻
+
+5️⃣ Checklist Evaluation Engine (NO Hard-Coding)
+
+What it does
+	•	Takes:
+	•	Extracted drawing facts
+	•	Reasoning outputs
+	•	Evaluates checklist items as:
+	•	Yes
+	•	No
+	•	Needs Review
+
+How (conceptually)
+	•	Each checklist item = a query
+	•	Queries reference drawing facts + reasoning outcomes
+	•	Checklist stored as structured data (not code)
+
+Example (conceptual)
+
+“Are essential dimensions provided?”
+Depends on:
+
+	•	All inferred functional features have defining dimensions
+
+Tasks
+	•	Convert checklist into structured questions
+	•	Map each question to required inputs
+	•	Add confidence handling
+
+Time Estimate
+
+⏱ 1.5 – 2 weeks
+
+This is where your “not hard-coded” argument fully lives.
+
+⸻
+
+6️⃣ Feedback & Report Generator (Very Important)
+
+Output is NOT just Yes/No
+
+For each checklist item:
+	•	Decision: Yes / No / Needs Review
+	•	Explanation: why
+	•	Actionable suggestion (when possible)
+
+Formats
+	•	Table (like your checklist)
+	•	Summary
+	•	Optional annotated PDF/DXF overlay
+
+Tasks
+	•	Natural-language templates
+	•	Severity levels (Info / Warning / Critical)
+	•	Structured report output
+
+Time Estimate
+
+⏱ 1 week
+
+This is what makes the system useful, not academic.
+
 pip install numpy matplotlib scikit-image scipy
 
 import json

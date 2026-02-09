@@ -1,0 +1,402 @@
+Perfect, now I’m fully aligned 👍
+You want a scalable, practical “how exactly to do it” for Steps 1–6, explicitly showing where LLMs help, because ~300 checklist points is too big to do naively.
+
+Below is a repeatable, semi-automated workflow that real teams use.
+
+I’ll go step by step and for each step I’ll say:
+	•	What is manual
+	•	What is LLM-assisted
+	•	What is automated
+	•	What artifacts you produce
+
+No skipping. No magic.
+
+⸻
+
+STEP 1 — MERGE 6 EXCEL CHECKLISTS (SCALE-SAFE)
+
+Goal
+
+Create a single source of truth without losing provenance.
+
+⸻
+
+WHAT YOU DO (Manual + Scripted)
+	1.	Keep original 6 Excel files untouched
+	2.	Write a small script (or Excel PowerQuery) to merge them
+
+Required columns (non-negotiable)
+
+Column	Who fills	How
+checklist_id	Script	Prefix + running number
+checklist_text	Original	Copied as-is
+source_checklist	Script	File name
+product_type	Script	From source
+version	Script	v1
+
+📌 This step is 100% mechanical
+🚫 No LLM needed here
+
+⸻
+
+Output
+
+👉 master_checklist.csv (~300 rows)
+
+⸻
+
+STEP 2 — INTENT TYPE TAGGING (LLM-ASSISTED, HUMAN-APPROVED)
+
+This is where scale matters.
+
+⸻
+
+WHAT YOU ARE REALLY DOING
+
+You’re answering:
+
+“What kind of check is this?”
+
+You only allow 7 intent types.
+
+⸻
+
+HOW TO DO IT AT SCALE (THIS IS IMPORTANT)
+
+2.1 Define a FIXED intent taxonomy (once)
+
+existence
+numeric
+geometric
+consistency
+annotation
+manufacturability
+compliance
+
+Freeze this list.
+
+⸻
+
+2.2 Use LLM for first-pass tagging
+
+LLM Prompt (batch-friendly)
+
+You are classifying engineering checklist items.
+
+Choose ONE intent type from:
+[existence, numeric, geometric, consistency, annotation, manufacturability, compliance]
+
+Checklist item:
+"Dimensions should not clash with each other and also with views"
+
+Return ONLY the intent type.
+
+LLM Output
+
+geometric
+
+
+⸻
+
+2.3 Human review (fast)
+	•	Engineer reviews 300 rows
+	•	Corrects only mismatches (usually <10%)
+
+💡 This reduces effort from 300 decisions → ~30 corrections
+
+⸻
+
+Output
+
+intent_type column finalized
+
+⸻
+
+STEP 3 — ATOMIC RULE DECOMPOSITION (LLM-ASSISTED, HUMAN-CONTROLLED)
+
+This is the most cognitively expensive step, so LLM helps a LOT.
+
+⸻
+
+WHAT YOU ARE REALLY DOING
+
+Turning vague human checks into binary machine checks.
+
+⸻
+
+3.1 LLM proposes atomic splits
+
+LLM Prompt
+
+You are converting engineering checklist items into atomic checks.
+
+Checklist:
+"Ensure views and dimensions should not clash with each other"
+
+Rules:
+- Each atomic check must result in YES or NO
+- Do not include solutions
+- Do not include assumptions
+
+Return a numbered list of atomic checks.
+
+LLM Output
+
+1. Dimensions do not overlap with other dimensions
+2. Dimensions do not overlap with drawing views
+
+
+⸻
+
+3.2 Human validates & edits
+
+You only check:
+	•	Are they binary?
+	•	Are they independent?
+	•	Are they checkable with data?
+
+Reject or merge if needed.
+
+⸻
+
+3.3 Assign atomic_rule_id
+
+atomic_rule_id	parent_checklist_id	atomic_description
+DIM_01A	G_07	Dimension vs dimension overlap
+DIM_01B	G_07	Dimension vs view overlap
+
+📌 Expect:
+	•	300 checklist points → ~500–700 atomic rules
+	•	This is normal
+
+⸻
+
+Output
+
+atomic_rules.csv
+
+⸻
+
+STEP 4 — REQUIRED INPUT DATA IDENTIFICATION (LLM SUGGESTS, YOU DECIDE)
+
+This step determines what can be automated vs manual.
+
+⸻
+
+WHAT YOU ARE REALLY DOING
+
+Answering:
+
+“What data must exist for this rule to be checkable?”
+
+⸻
+
+4.1 Create a controlled vocabulary of data fields
+
+Example:
+
+dimension_bbox
+view_bbox
+section_views
+bom_part_no
+drawing_part_no
+hole_diameter
+welding_symbols
+material_spec
+
+Freeze this list.
+
+⸻
+
+4.2 LLM suggests required inputs
+
+LLM Prompt
+
+Given this atomic check:
+"Dimension vs view overlap"
+
+Choose required inputs ONLY from this list:
+[dimension_bbox, view_bbox, section_views, bom_part_no, drawing_part_no]
+
+Return a comma-separated list.
+
+LLM Output
+
+dimension_bbox, view_bbox
+
+
+⸻
+
+4.3 Human sanity check
+
+You verify:
+	•	No missing data
+	•	No unnecessary data
+
+⸻
+
+4.4 Add checkability flag
+
+atomic_rule_id	required_inputs	checkability
+DIM_01B	dimension_bbox, view_bbox	auto
+STR_05	stress_value	manual
+LAW_01	mv_act_clause	manual
+
+
+⸻
+
+Output
+
+Atomic rules now know what data they need.
+
+⸻
+
+STEP 5 — APPLICABILITY MAPPING (LLM CAN PRE-FILL)
+
+This is where you solve the 6 checklist overlap problem cleanly.
+
+⸻
+
+WHAT YOU ARE REALLY DOING
+
+Answering:
+
+“Where does this rule make sense?”
+
+⸻
+
+5.1 Product types (fixed list)
+
+general
+bus_body_structure
+bus_body_trims
+bus_body_scf
+bus_body_cws
+electrical
+
+
+⸻
+
+5.2 LLM suggests applicability
+
+LLM Prompt
+
+Atomic rule:
+"Welding symbol must be present at joint"
+
+Which product types does this apply to?
+Choose from:
+[general, bus_body_structure, bus_body_trims, bus_body_scf, bus_body_cws, electrical]
+
+LLM Output
+
+bus_body_structure, bus_body_scf, bus_body_cws
+
+
+⸻
+
+5.3 Human validation
+
+Engineer quickly checks yes/no per column.
+
+⸻
+
+Output
+
+Applicability matrix ready
+
+⸻
+
+STEP 6 — DEFINE PASS / FAIL LOGIC (HUMAN + TEMPLATE)
+
+This step must be deterministic.
+
+⸻
+
+WHAT YOU ARE REALLY DOING
+
+Writing logic a computer can evaluate without interpretation.
+
+⸻
+
+6.1 Use logic templates (IMPORTANT)
+
+Create templates per intent type.
+
+Existence
+
+pass: count(X) >= N
+fail: count(X) < N
+
+Geometric
+
+pass: intersection(A, B) == Ø
+fail: intersection(A, B) ≠ Ø
+
+Consistency
+
+pass: A == B
+fail: A != B
+
+Numeric
+
+pass: X ∈ [min, max]
+fail: X ∉ [min, max]
+
+
+⸻
+
+6.2 Fill template per atomic rule
+
+atomic_rule_id	pass_condition	fail_condition
+DIM_01B	intersection(dimension_bbox, view_bbox)==Ø	≠Ø
+BOM_02	bom.part_no==drawing.part_no	!=
+
+🚫 NO LLM here
+This is engineering logic.
+
+⸻
+
+Output
+
+Your rule engine is now fully definable.
+
+⸻
+
+🧠 WHAT LLM IS USED FOR (CLEAR BOUNDARY)
+
+Step	LLM Role
+Step 2	Intent tagging
+Step 3	Atomic rule suggestion
+Step 4	Required data suggestion
+Step 5	Applicability pre-fill
+Step 6	❌ No
+
+LLM never:
+	•	Decides YES/NO
+	•	Interprets geometry
+	•	Executes logic
+
+⸻
+
+✅ WHAT YOU HAVE AFTER STEP 6
+
+You now possess:
+
+✔ A 300-point checklist systematized
+✔ ~600 atomic rules
+✔ Clear automation boundaries
+✔ Deterministic logic
+✔ LLM only where it scales cognition
+
+This is exactly how you scale without losing control.
+
+⸻
+
+If you want next, I can:
+	•	Walk one real checklist point end-to-end
+	•	Give exact LLM prompt templates
+	•	Help you estimate automation coverage
+	•	Help you prioritize which 100 rules to implement first
+
+Just tell me the next move.

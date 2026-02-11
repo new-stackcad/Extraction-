@@ -1,0 +1,370 @@
+Nice, this is actually a very solid extraction already 👍
+You’re past the hardest part (DXF → JSONL). Now the real work is turning raw CAD entities into engineering meaning.
+
+I’ll give you a clean, scalable architecture + step-by-step pipeline, aligned exactly with what you want to end up with (checker-ready, drawing-agnostic, future-proof). I’ll also point out where LLMs help vs where rules are better.
+
+⸻
+
+Big picture (mental model)
+
+Think of your DXF JSONL as pixels, and what you want as semantic objects:
+
+DXF JSONL (entities)
+   ↓
+Primitive grouping (by block, proximity, layer)
+   ↓
+Semantic blocks (Title block, Notes, BOM, Views…)
+   ↓
+Structured engineering schema (JSON)
+   ↓
+Checker / rules engine
+
+You are basically building a CAD document understanding system.
+
+⸻
+
+Step 0 — Normalize & enrich raw entities (very important)
+
+Before any “smart” logic, clean and normalize.
+
+What to do
+
+For every JSONL entity:
+	•	Flatten geometry fields
+	•	Add derived attributes
+	•	Add IDs
+
+Add these fields
+
+{
+  "entity_id": "uuid",
+  "type": "TEXT",
+  "text": "NOTE:",
+  "x": 41.0,
+  "y": 140.14,
+  "z": 0.0,
+  "height": 3.5,
+  "rotation": 0.0,
+  "layer": "0",
+  "color": 5,
+  "block": "BLOCK301",
+  "paperspace": false
+}
+
+Derived fields (crucial)
+	•	bbox (estimate from text height + length)
+	•	is_uppercase
+	•	numeric_tokens (["8.76", "0.76"])
+	•	unit_tokens (["mm"])
+	•	text_class_hint (regex-based: NOTE, IS code, REV, SCALE, etc.)
+
+👉 No LLM yet. This must be deterministic.
+
+⸻
+
+Step 1 — Spatial + block-based clustering
+
+DXF drawings are spatial documents.
+
+Clustering rules
+
+Cluster entities by:
+	1.	Block reference (insert_stack)
+	2.	Spatial proximity (Y-distance is key for text)
+	3.	Alignment (same Y ≈ same line)
+
+Example:
+	•	Your notes are clearly:
+	•	Same block
+	•	Vertically stacked
+	•	Similar font height
+
+Output
+
+{
+  "cluster_id": "C_NOTE_01",
+  "entities": [ ... ],
+  "bbox": [xmin, ymin, xmax, ymax],
+  "avg_text_height": 3.5
+}
+
+This alone will separate:
+	•	Notes
+	•	Title block text
+	•	BOM tables
+	•	View labels
+
+⸻
+
+Step 2 — Semantic block classification (THIS is key)
+
+Now you classify clusters into engineering sections.
+
+Target blocks (your list, mapped cleanly)
+
+Category	How to detect
+Title Block	Bottom-right, dense text, keywords: DRAWN BY, SCALE, DWG NO
+Alteration / Revision Block	Table-like, keywords: REV, DATE, DESCRIPTION
+General Notes	Starts with NOTE / numbered list
+General Instructions	Verbs + standards (SHALL, SHOULD, IS xxxx)
+BOM	Grid + columns: ITEM, QTY, PART NO
+Drawing Section Notes	Near views, smaller text
+Special Blocks	Anything block-based but unmatched
+Views	Labels like FRONT VIEW, SECTION A-A
+
+How to do it
+
+Hybrid approach (best practice):
+	•	Rule-based first
+	•	LLM only for ambiguity
+
+Rule-based classification
+
+if "NOTE" in text and numbered_list:
+    block_type = "GENERAL_NOTES"
+elif keywords_in({"DRAWN", "SCALE", "DWG"}):
+    block_type = "TITLE_BLOCK"
+elif table_structure_detected:
+    block_type = "BOM"
+
+LLM assist (optional but powerful)
+When confidence < threshold:
+
+“Given this text cluster and its location, classify it as one of: Title Block, BOM, Notes, Revision Block…”
+
+⚠️ Never let LLM decide geometry or measurements.
+
+⸻
+
+Step 3 — Structure each block properly (schema design)
+
+Now you lock down schemas. This is what makes your checker easy.
+
+⸻
+
+1️⃣ Title Block schema
+
+{
+  "title_block": {
+    "drawing_number": "XXXX",
+    "part_name": "WINDSHIELD GLASS",
+    "scale": "1:1",
+    "units": "mm",
+    "material": "GLASS",
+    "projection_angle": "FIRST_ANGLE",
+    "revision": "A"
+  }
+}
+
+Projection angle
+	•	Detect symbol geometry (cone/frustum)
+	•	OR text: FIRST ANGLE / THIRD ANGLE
+
+⸻
+
+2️⃣ Alteration / Revision block
+
+{
+  "revisions": [
+    {
+      "rev": "A",
+      "description": "INITIAL RELEASE",
+      "date": "12-01-2024",
+      "approved_by": "XX"
+    }
+  ]
+}
+
+Detected via:
+	•	Table geometry
+	•	Column headers
+
+⸻
+
+3️⃣ General instructions / notes
+
+Your example fits perfectly here:
+
+{
+  "general_notes": [
+    {
+      "id": 1,
+      "text": "GLASS SHOULD MEET THE REQUIREMENTS AS PER IS 2553 PART 2",
+      "standard": "IS 2553-2"
+    },
+    {
+      "id": 2,
+      "text": "GLASS SHOULD BE 8.76mm THICK WITH 0.76mm PVB FILM",
+      "parameters": {
+        "thickness_mm": 8.76,
+        "pvb_mm": 0.76
+      }
+    }
+  ]
+}
+
+🔑 This is where regex + unit parsing beats LLM.
+
+⸻
+
+4️⃣ BOM
+
+{
+  "bom": [
+    {
+      "item": 1,
+      "part_no": "XXX",
+      "description": "GLASS PANEL",
+      "qty": 1,
+      "material": "LAMINATED GLASS"
+    }
+  ]
+}
+
+Detected via:
+	•	Lines forming grid
+	•	Repeated X-aligned text
+
+⸻
+
+Step 4 — View detection & labeling (critical for GD&T)
+
+Detect views
+
+Views are:
+	•	Closed geometry clusters
+	•	With nearby text like:
+	•	FRONT VIEW
+	•	SECTION A-A
+	•	DETAIL B
+
+{
+  "views": [
+    {
+      "view_id": "V1",
+      "type": "FRONT",
+      "label": "FRONT VIEW",
+      "bbox": [...],
+      "scale": "1:1"
+    }
+  ]
+}
+
+
+⸻
+
+Step 5 — Geometry → dimensions → GD&T linkage
+
+This is advanced but doable.
+
+Pipeline
+	1.	Extract geometry per view
+	•	Lines, arcs, circles
+	2.	Detect features
+	•	Holes (circles)
+	•	Edges
+	•	Profiles
+	3.	Attach dimensions
+	•	Proximity between dimension text + leaders
+	4.	Attach GD&T
+	•	FCF frames → feature
+	•	Datum letters → features
+
+{
+  "feature_id": "HOLE_01",
+  "type": "HOLE",
+  "diameter": 10,
+  "tolerance": "±0.1",
+  "gdt": {
+    "type": "POSITION",
+    "value": 0.2,
+    "datums": ["A", "B"]
+  }
+}
+
+⚠️ LLM should not infer geometry. Use it only to:
+	•	Parse FCF text meaning
+	•	Normalize symbols
+
+⸻
+
+Step 6 — Special / variable blocks (future-proofing)
+
+You mentioned:
+
+“any other special block which might change from drawing to drawing”
+
+Correct instinct 👍
+
+Strategy
+	•	Anything unclassified → UNKNOWN_BLOCK
+	•	Store raw + metadata
+	•	Later you can:
+	•	Add new rules
+	•	Reprocess without touching DXF again
+
+{
+  "block_type": "UNKNOWN",
+  "raw_entities": [...],
+  "location": "TOP_LEFT"
+}
+
+
+⸻
+
+Step 7 — Checker-ready final structure
+
+Your final output should look like:
+
+{
+  "meta": { "drawing_id": "...", "version": "1.0" },
+  "title_block": {...},
+  "projection_angle": "FIRST_ANGLE",
+  "revisions": [...],
+  "general_notes": [...],
+  "bom": [...],
+  "views": [...],
+  "features": [...],
+  "dimensions": [...],
+  "gdt": [...],
+  "unknown_blocks": [...]
+}
+
+This is gold for:
+	•	Rule engines
+	•	Compliance checking
+	•	AI copilots
+	•	PLM integration
+
+⸻
+
+Where LLMs help vs hurt (very important)
+
+✅ Use LLM for
+	•	Classifying ambiguous text blocks
+	•	Normalizing free-form notes
+	•	Mapping standards text to known codes
+	•	Explaining checker failures
+
+❌ Do NOT use LLM for
+	•	Geometry extraction
+	•	Measurements
+	•	View detection
+	•	GD&T numeric values
+
+⸻
+
+Final honest take
+
+What you’re building is very close to what CAD validation tools in automotive & aerospace do internally.
+
+If you do this right:
+	•	You’re not just making a checker
+	•	You’re making a CAD understanding engine
+
+If you want, next we can:
+	•	Design exact schemas
+	•	Write pseudo-code per step
+	•	Or design the checker rules layer on top of this
+
+You’re thinking in the right direction 🚀

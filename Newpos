@@ -1,22 +1,41 @@
 import fitz  # PyMuPDF
 import json
+from PIL import Image, ImageDraw
+import os
 
-def extract_text_with_bboxes(pdf_path, output_json="extracted_text.json"):
+
+def extract_text_and_generate_overlay(pdf_path,
+                                      output_json="extracted_text.json",
+                                      overlay_folder="overlays",
+                                      dpi=200):
+
+    if not os.path.exists(overlay_folder):
+        os.makedirs(overlay_folder)
+
     doc = fitz.open(pdf_path)
     all_pages_data = []
 
+    print(f"Processing PDF: {pdf_path}")
+    print(f"Total Pages: {len(doc)}")
+
     for page_num, page in enumerate(doc):
-        blocks = page.get_text("dict")["blocks"]
+
+        print(f"\nProcessing Page {page_num + 1}...")
+
+        page_dict = page.get_text("dict")
+        blocks = page_dict["blocks"]
+
         page_data = []
 
+        # ---- Extract Text + Bounding Boxes ----
         for block in blocks:
-            if "lines" in block:  # ensures it's text block
+            if "lines" in block:
                 for line in block["lines"]:
                     for span in line["spans"]:
                         text = span["text"].strip()
-                        if text:  # ignore empty
-                            bbox = span["bbox"]  # (x0, y0, x1, y1)
-                            
+                        if text:
+                            bbox = span["bbox"]
+
                             page_data.append({
                                 "text": text,
                                 "bbox": {
@@ -34,39 +53,42 @@ def extract_text_with_bboxes(pdf_path, output_json="extracted_text.json"):
             "texts": page_data
         })
 
+        # ---- Generate Overlay Image ----
+        pix = page.get_pixmap(dpi=dpi)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        draw = ImageDraw.Draw(img)
+
+        scale_x = pix.width / page.rect.width
+        scale_y = pix.height / page.rect.height
+
+        for item in page_data:
+            bbox = item["bbox"]
+
+            x0 = bbox["x0"] * scale_x
+            y0 = bbox["y0"] * scale_y
+            x1 = bbox["x1"] * scale_x
+            y1 = bbox["y1"] * scale_y
+
+            draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
+
+        overlay_path = os.path.join(
+            overlay_folder, f"page_{page_num + 1}_overlay.png"
+        )
+        img.save(overlay_path)
+
+        print(f"Overlay saved: {overlay_path}")
+        print(f"Extracted {len(page_data)} text elements.")
+
+    # ---- Save JSON ----
     with open(output_json, "w") as f:
         json.dump(all_pages_data, f, indent=4)
 
-    print(f"Extraction complete. Saved to {output_json}")
+    print(f"\nExtraction complete.")
+    print(f"Text data saved to: {output_json}")
+    print(f"Overlay images saved in: {overlay_folder}")
 
-    return all_pages_data
 
-
-
-import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw
-
-def generate_overlay(pdf_path, extracted_data, output_image="overlay.png"):
-    doc = fitz.open(pdf_path)
-    page = doc[0]  # first page
-    
-    pix = page.get_pixmap(dpi=200)
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-    draw = ImageDraw.Draw(img)
-
-    scale_x = pix.width / page.rect.width
-    scale_y = pix.height / page.rect.height
-
-    for item in extracted_data[0]["texts"]:
-        bbox = item["bbox"]
-        
-        x0 = bbox["x0"] * scale_x
-        y0 = bbox["y0"] * scale_y
-        x1 = bbox["x1"] * scale_x
-        y1 = bbox["y1"] * scale_y
-        
-        draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
-
-    img.save(output_image)
-    print(f"Overlay image saved as {output_image}")
+# ---- RUN HERE ----
+if __name__ == "__main__":
+    pdf_path = "your_vector_pdf.pdf"  # 🔥 Change this
+    extract_text_and_generate_overlay(pdf_path)

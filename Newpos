@@ -1,287 +1,72 @@
-First — breathe.
-You’re actually very close. Your extraction is good. Now you just need a structured, fool-proof architecture for:
-	1.	View extraction
-	2.	View clustering
-	3.	Linking geometry + dimensions + notes to correct view
-	4.	Handling rare fallback cases
-
-And you want this to work for ANY drawing, without title block, without notes table — only views.
-
-Good. Let’s design this properly like a production system.
-
-⸻
-
-🎯 FINAL OBJECTIVE
-
-From DXF/PDF → Extract:
-
-For each view:
-	•	View boundary
-	•	All geometry (LINE, ARC, CIRCLE, POLYLINE, etc.)
-	•	All dimensions
-	•	All text labels
-	•	Center marks, hatching
-	•	Linked metadata
-
-And store it cleanly as:
-
-{
-  "views": [
-    {
-      "view_id": "V1",
-      "bounding_box": [xmin, ymin, xmax, ymax],
-      "geometry": [...],
-      "dimensions": [...],
-      "texts": [...],
-      "centers": [...]
-    }
-  ]
-}
-
-
-⸻
-
-🚀 STEP-BY-STEP MASTER PLAN (100% Reliable)
-
-We will do this in 5 strict phases.
-
-⸻
-
-✅ PHASE 1 — Clean & Normalize Entities
-
-Before clustering, you must normalize everything.
-
-Rules:
-	1.	Use the flattened file only
-	2.	Ignore:
-	•	Title block region
-	•	Border rectangle
-	•	Notes table
-	3.	Keep only:
-	•	LINE
-	•	ARC
-	•	CIRCLE
-	•	LWPOLYLINE / POLYLINE
-	•	TEXT / MTEXT
-	•	DIMENSION
-
-IMPORTANT:
-
-Convert every entity to:
-
-{
-    "type": "LINE",
-    "bbox": [xmin, ymin, xmax, ymax],
-    "center": [cx, cy],
-    "raw": original_entity
-}
-
-Everything must have a bounding box.
-
-If you don’t normalize — clustering will never be stable.
-
-⸻
-
-✅ PHASE 2 — Detect Views (Pure Geometry Clustering)
-
-Now we detect separate drawing views.
-
-CORE IDEA:
-
-Views are spatially separated clusters of geometry.
-
-Use this approach:
-
-Step 1: Extract ONLY geometry (no text, no dimensions)
-
-Step 2: Build KD-Tree using geometry centers
-
-Step 3: Run DBSCAN clustering
-
-from sklearn.cluster import DBSCAN
-import numpy as np
-
-points = np.array([entity["center"] for entity in geometry_entities])
-
-clustering = DBSCAN(
-    eps=adaptive_distance,
-    min_samples=10
-).fit(points)
-
-labels = clustering.labels_
-
-How to choose eps?
-
-Use:
-
-eps = 0.05 * drawing_diagonal
-
-This scales automatically for any drawing.
-
-⸻
-
-✅ PHASE 3 — Compute View Bounding Boxes
-
-For each cluster:
-
-xmin = min(e["bbox"][0] for e in cluster)
-ymin = min(e["bbox"][1] for e in cluster)
-xmax = max(e["bbox"][2] for e in cluster)
-ymax = max(e["bbox"][3] for e in cluster)
-
-Add margin:
-
-padding = 0.02 * diagonal
-
-Now you have:
-
-view["bounding_box"]
-
-
-⸻
-
-✅ PHASE 4 — Link Dimensions & Text to Correct View
-
-This is CRITICAL.
-
-For each dimension or text:
-	1.	Get its center
-	2.	Check which view bounding box contains it
-
-def belongs_to_view(entity, view_bbox):
-    cx, cy = entity["center"]
-    xmin, ymin, xmax, ymax = view_bbox
-    return xmin <= cx <= xmax and ymin <= cy <= ymax
-
-Attach it.
-
-⸻
-
-🔥 PHASE 5 — Fallback System (Very Important)
-
-Sometimes clustering fails if:
-	•	Views are very close
-	•	Or one view overlaps projection
-
-Fallback method:
-
-Secondary method: Spatial Grid Segmentation
-	1.	Divide drawing into 4–6 large grid regions
-	2.	Detect density
-	3.	Merge dense neighboring grids
-
-This guarantees separation even when DBSCAN struggles.
-
-⸻
-
-💎 GOLD STANDARD VIEW DETECTION METHOD
-
-To make it nearly impossible to fail:
-
-Combine 3 Signals:
-
-Signal	Purpose
-Geometry clustering	Primary separation
-Convex hull area	Remove noise
-Density threshold	Reject tiny clusters
-
-Cluster is valid view only if:
-
-num_entities > threshold
-AND
-cluster_area > min_area
-
-
-⸻
-
-🧠 Architecture Design (Clean & Maintainable)
-
-Structure your project like:
-
-project/
-│
-├── extractor.py
-├── normalizer.py
-├── view_cluster.py
-├── linker.py
-├── fallback.py
-└── pipeline.py
-
-Each file = one responsibility.
-
-⸻
-
-⚠️ What You Should NOT Do
-
-❌ Don’t cluster text
-❌ Don’t rely on layer names
-❌ Don’t assume view labels like “FRONT”
-❌ Don’t assume fixed distance
-❌ Don’t rely on title block position
-
-Everything must be geometry-driven.
-
-⸻
-
-🎯 Why This Will Work for ANY Drawing
-
-Because it uses:
-	•	Spatial clustering
-	•	Adaptive thresholds
-	•	Bounding box logic
-	•	Multi-stage validation
-	•	Fallback segmentation
-
-Not assumptions.
-
-⸻
-
-🔎 Your Current Mistake
-
-From your image I can see:
-
-You are trying to directly label from raw JSON entities.
-
-That will NEVER scale.
-
-You must:
-
-Normalize → Cluster → Bound → Link
-
-In that order.
-
-⸻
-
-🏁 Final Perfect Pipeline
-
-DXF → Flatten → Normalize
-     ↓
-Geometry Extraction
-     ↓
-DBSCAN Clustering
-     ↓
-Bounding Box Computation
-     ↓
-Attach Dimensions
-     ↓
-Attach Text
-     ↓
-Validate & Fallback
-     ↓
-Export Structured JSON
-
-
-⸻
-
-🧩 Next Step
-
-Now tell me:
-
-Do you want me to:
-	1.	Write the full production-level clustering code?
-	2.	Write the complete pipeline with fallback?
-	3.	First fix your normalization step properly?
-
-We will go step by step and make this perfect.
-
-You are very close. Don’t panic.
+import fitz  # PyMuPDF
+import json
+
+def extract_text_with_bboxes(pdf_path, output_json="extracted_text.json"):
+    doc = fitz.open(pdf_path)
+    all_pages_data = []
+
+    for page_num, page in enumerate(doc):
+        blocks = page.get_text("dict")["blocks"]
+        page_data = []
+
+        for block in blocks:
+            if "lines" in block:  # ensures it's text block
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"].strip()
+                        if text:  # ignore empty
+                            bbox = span["bbox"]  # (x0, y0, x1, y1)
+                            
+                            page_data.append({
+                                "text": text,
+                                "bbox": {
+                                    "x0": bbox[0],
+                                    "y0": bbox[1],
+                                    "x1": bbox[2],
+                                    "y1": bbox[3]
+                                },
+                                "font": span["font"],
+                                "size": span["size"]
+                            })
+
+        all_pages_data.append({
+            "page": page_num,
+            "texts": page_data
+        })
+
+    with open(output_json, "w") as f:
+        json.dump(all_pages_data, f, indent=4)
+
+    print(f"Extraction complete. Saved to {output_json}")
+
+    return all_pages_data
+
+
+
+import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw
+
+def generate_overlay(pdf_path, extracted_data, output_image="overlay.png"):
+    doc = fitz.open(pdf_path)
+    page = doc[0]  # first page
+    
+    pix = page.get_pixmap(dpi=200)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    draw = ImageDraw.Draw(img)
+
+    scale_x = pix.width / page.rect.width
+    scale_y = pix.height / page.rect.height
+
+    for item in extracted_data[0]["texts"]:
+        bbox = item["bbox"]
+        
+        x0 = bbox["x0"] * scale_x
+        y0 = bbox["y0"] * scale_y
+        x1 = bbox["x1"] * scale_x
+        y1 = bbox["y1"] * scale_y
+        
+        draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
+
+    img.save(output_image)
+    print(f"Overlay image saved as {output_image}")

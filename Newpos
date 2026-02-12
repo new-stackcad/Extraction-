@@ -1,0 +1,305 @@
+# view_segmentation.py
+
+import json
+import math
+from collections import defaultdict
+from statistics import median
+
+
+# ---------------------------------------------------
+# Load JSONL
+# ---------------------------------------------------
+def load_entities(path):
+    entities = []
+    with open(path, "r") as f:
+        for line in f:
+            entities.append(json.loads(line))
+    return entities
+
+
+# ---------------------------------------------------
+# Bounding box extraction (universal safe)
+# ---------------------------------------------------
+def get_bbox(ent):
+    if "bbox" in ent and ent["bbox"]:
+        return tuple(ent["bbox"])
+
+    if "insert" in ent:
+        x, y = ent["insert"]
+        return (x, y, x + 1e-6, y + 1e-6)
+
+    return None
+
+
+# ---------------------------------------------------
+# Sheet bounding box
+# ---------------------------------------------------
+def compute_sheet_bbox(entities):
+    xs, ys = [], []
+    for e in entities:
+        b = get_bbox(e)
+        if b:
+            xs += [b[0], b[2]]
+            ys += [b[1], b[3]]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+# ---------------------------------------------------
+# Distance between bounding boxes
+# ---------------------------------------------------
+def bbox_distance(b1, b2):
+    dx = max(0, max(b1[0] - b2[2], b2[0] - b1[2]))
+    dy = max(0, max(b1[1] - b2[3], b2[1] - b1[3]))
+    return math.hypot(dx, dy)
+
+
+# ---------------------------------------------------
+# Graph-based clustering with adaptive threshold
+# ---------------------------------------------------
+def cluster_entities(entities):
+
+    boxes = []
+    indices = []
+
+    for i, e in enumerate(entities):
+        b = get_bbox(e)
+        if b:
+            boxes.append(b)
+            indices.append(i)
+
+    if not boxes:
+        return []
+
+    sizes = [(b[2]-b[0] + b[3]-b[1]) for b in boxes]
+    gap = median(sizes) * 2.0
+
+    n = len(boxes)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        pa, pb = find(a), find(b)
+        if pa != pb:
+            parent[pb] = pa
+
+    for i in range(n):
+        for j in range(i+1, n):
+            if bbox_distance(boxes[i], boxes[j]) < gap:
+                union(i, j)
+
+    clusters = defaultdict(list)
+    for i in range(n):
+        clusters[find(i)].append(indices[i])
+
+    return list(clusters.values())
+
+
+# ---------------------------------------------------
+# Remove title block cluster robustly
+# ---------------------------------------------------
+def remove_title_block(clusters, entities, sheet_bbox):
+
+    filtered = []
+
+    sxmin, symin, sxmax, symax = sheet_bbox
+    sheet_width = sxmax - sxmin
+    sheet_height = symax - symin
+
+    for cluster in clusters:
+        xs, ys = [], []
+        text_count = 0
+
+        for i in cluster:
+            e = entities[i]
+            b = get_bbox(e)
+            if b:
+                xs += [b[0], b[2]]
+                ys += [b[1], b[3]]
+
+            if e["type"] in ["TEXT", "MTEXT"]:
+                text_count += 1
+
+        if not xs:
+            continue
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        width = xmax - xmin
+
+        # bottom wide text-dense cluster = title block
+        if (
+            width > 0.6 * sheet_width
+            and ymin < symin + 0.25 * sheet_height
+            and text_count > 10
+        ):
+            continue
+
+        filtered.append(cluster)
+
+    return filtered
+
+
+# ---------------------------------------------------
+# Build clean view objects
+# ---------------------------------------------------
+def build_views(clusters, entities):
+
+    views = []
+
+    for vid, cluster in enumerate(clusters):
+        xs, ys = [], []
+
+        for i in cluster:
+            b = get_bbox(entities[i])
+            if b:
+                xs += [b[0], b[2]]
+                ys += [b[1], b[3]]
+
+        if not xs:
+            continue
+
+        views.append({
+            "view_id": vid,
+            "bbox": (min(xs), min(ys), max(xs), max(ys)),
+            "entity_ids": cluster
+        })
+
+    return views
+
+
+# ---------------------------------------------------
+# Full segmentation pipeline
+# ---------------------------------------------------
+def segment_views(jsonl_path):
+
+    entities = load_entities(jsonl_path)
+
+    sheet_bbox = compute_sheet_bbox(entities)
+    clusters = cluster_entities(entities)
+    clusters = remove_title_block(clusters, entities, sheet_bbox)
+
+    views = build_views(clusters, entities)
+
+    return views, entities
+
+
+
+# semantic_labeling.py
+
+import re
+
+
+VIEW_PATTERNS = [
+    r"SECTION\s+[A-Z]-[A-Z]",
+    r"DETAIL\s+[A-Z]",
+    r"[A-Z]-[A-Z]",
+    r".*VIEW.*"
+]
+
+
+def get_bbox(ent):
+    if "bbox" in ent and ent["bbox"]:
+        return tuple(ent["bbox"])
+    return None
+
+
+# ---------------------------------------------------
+# Detect view title text
+# ---------------------------------------------------
+def detect_view_name(view, entities):
+
+    xmin, ymin, xmax, ymax = view["bbox"]
+    candidates = []
+
+    for i in view["entity_ids"]:
+        ent = entities[i]
+        if ent["type"] not in ["TEXT", "MTEXT"]:
+            continue
+
+        text = ent.get("text", "").strip().upper()
+        b = get_bbox(ent)
+        if not b:
+            continue
+
+        cx = (b[0] + b[2]) / 2
+        cy = (b[1] + b[3]) / 2
+
+        if cy >= ymax or (xmin <= cx <= xmax and ymin <= cy <= ymax):
+            for pattern in VIEW_PATTERNS:
+                if re.search(pattern, text):
+                    height = ent.get("height", 1.0)
+                    candidates.append((text, height))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    return candidates[0][0]
+
+
+# ---------------------------------------------------
+# Extract annotations (dimensions, leaders)
+# ---------------------------------------------------
+def extract_annotations(view, entities):
+
+    annotations = []
+
+    for i in view["entity_ids"]:
+        if entities[i]["type"] in ["DIMENSION", "LEADER"]:
+            annotations.append(entities[i])
+
+    return annotations
+
+
+# ---------------------------------------------------
+# Full labeling
+# ---------------------------------------------------
+def label_views(views, entities):
+
+    labeled = []
+
+    for view in views:
+
+        name = detect_view_name(view, entities)
+        annotations = extract_annotations(view, entities)
+
+        labeled.append({
+            "view_id": view["view_id"],
+            "bbox": view["bbox"],
+            "view_name": name if name else "UNNAMED_VIEW",
+            "annotations": annotations,
+            "entities": view["entity_ids"]
+        })
+
+    return labeled
+
+
+
+# main_pipeline.py
+
+from view_segmentation import segment_views
+from semantic_labeling import label_views
+
+
+def run_pipeline(jsonl_path):
+
+    views, entities = segment_views(jsonl_path)
+    labeled = label_views(views, entities)
+
+    return labeled
+
+
+if __name__ == "__main__":
+    result = run_pipeline("flattened_entities.jsonl")
+
+    for v in result:
+        print("View:", v["view_name"])
+        print("BBox:", v["bbox"])
+        print("Annotations:", len(v["annotations"]))
+        print("----")

@@ -1,94 +1,266 @@
-import fitz  # PyMuPDF
-import json
-from PIL import Image, ImageDraw
-import os
+Good.
+Now we are at the core CAD intelligence problem.
+
+You want:
+
+Segment views from pure DXF geometry
+No associativity
+Template border is also just geometry
+Works across variety of drawings
+
+This is a geometric clustering problem, not parsing.
+
+Let’s break this cleanly.
+
+⸻
+
+🧠 First: What Is a “View” Geometrically?
+
+A view is usually:
+	•	A dense cluster of geometry
+	•	Spatially separated from other clusters
+	•	Often enclosed by a rectangle (but not always)
+	•	Contains dimensions close to it
+	•	Has whitespace around it
+
+So the most stable signal is:
+
+Spatial density separation
+
+Not layers.
+Not entity type.
+Not names.
+
+⸻
+
+🎯 The Correct Way (Robust Across Drawings)
+
+You need a 2-stage spatial graph clustering approach.
+
+⸻
+
+🔵 STAGE 1 — Remove Template Border Geometry
+
+You’re right:
+
+The border is also just lines.
+
+So first detect and remove page border.
+
+How to Detect Border Automatically
+
+Border usually:
+	•	Very large rectangle
+	•	Near page limits
+	•	Thin lines
+	•	Few entities
+	•	Covers most page area
+
+Algorithm:
+	1.	Compute global bounding box of all entities.
+	2.	Find largest closed rectangle-like structure.
+	3.	If rectangle area ≈ 80–95% of drawing extents → mark as border.
+	4.	Remove those lines.
+
+Even simpler heuristic:
+
+If a line:
+	•	Has x near xmin or xmax
+	•	Or y near ymin or ymax
+	•	And length > 70% of page dimension
+
+→ Likely border.
+
+Remove before clustering.
+
+This step is critical.
+
+⸻
+
+🔵 STAGE 2 — Convert Geometry to Points
+
+For clustering, represent each entity as:
+
+(cx, cy)
+
+Where:
+	•	Line → midpoint
+	•	Circle → center
+	•	Arc → center
+	•	Polyline → centroid
+
+Now you have point cloud.
+
+⸻
+
+🔥 STAGE 3 — Adaptive DBSCAN Clustering
+
+Use DBSCAN because:
+	•	You don’t know number of views
+	•	Works for irregular shapes
+	•	Robust to noise
+
+BUT:
+
+The key is adaptive eps, not fixed.
+
+⸻
+
+Correct eps Selection
+
+Compute:
+
+drawing_diagonal = sqrt(width² + height²)
+eps = 0.05–0.1 × drawing_diagonal
+
+This scales automatically across:
+	•	A4
+	•	A1
+	•	Small drawings
+	•	Large drawings
+
+Never use fixed distance.
+
+⸻
+
+🔵 STAGE 4 — Refine Clusters
+
+After DBSCAN:
+
+You’ll get:
+	•	Several clusters
+	•	Some noise points
+
+Now filter clusters by:
+
+Reject tiny clusters
+
+If cluster area < 2–5% of drawing area → discard
+
+These are usually:
+	•	stray lines
+	•	title block leftovers
+	•	dimension fragments
+
+⸻
+
+🔵 STAGE 5 — Split If Needed (Important)
+
+Sometimes two views are close.
+
+DBSCAN might merge them.
+
+So:
+
+For each cluster:
+	•	Compute convex hull
+	•	Check if cluster bounding box has large empty vertical/horizontal gap
+	•	If yes → re-cluster locally with smaller eps
+
+This is hierarchical clustering.
+
+⸻
+
+🧠 Why This Works Across Variety
+
+Because it relies on:
+
+✔ Spatial density
+✔ Scale-adaptive thresholds
+✔ No assumptions about layers
+✔ No assumptions about template
+
+This is how industrial systems do it.
+
+⸻
+
+🚨 Important Insight
+
+You cannot get 100% with a single method.
+
+So the real robust approach is:
+
+⸻
+
+🏗️ FINAL ROBUST PIPELINE
+
+1. Load DXF
+2. Normalize entities
+3. Remove border
+4. Remove very large sparse entities
+5. Convert to centroids
+6. DBSCAN (adaptive eps)
+7. Remove tiny clusters
+8. If cluster too large → recursive split
+9. Output clusters as views
 
 
-def extract_text_and_generate_overlay(pdf_path,
-                                      output_json="extracted_text.json",
-                                      overlay_folder="overlays",
-                                      dpi=200):
+⸻
 
-    if not os.path.exists(overlay_folder):
-        os.makedirs(overlay_folder)
+🧠 Optional Improvement (Very Powerful)
 
-    doc = fitz.open(pdf_path)
-    all_pages_data = []
+Instead of clustering only entity centers:
 
-    print(f"Processing PDF: {pdf_path}")
-    print(f"Total Pages: {len(doc)}")
+Create adjacency graph:
 
-    for page_num, page in enumerate(doc):
+Two entities connected if:
+	•	Their bounding boxes intersect
+	•	Or distance < threshold
 
-        print(f"\nProcessing Page {page_num + 1}...")
+Then compute connected components.
 
-        page_dict = page.get_text("dict")
-        blocks = page_dict["blocks"]
+This often works better than DBSCAN.
 
-        page_data = []
+Because views are usually spatially connected.
 
-        # ---- Extract Text + Bounding Boxes ----
-        for block in blocks:
-            if "lines" in block:
-                for line in block["lines"]:
-                    for span in line["spans"]:
-                        text = span["text"].strip()
-                        if text:
-                            bbox = span["bbox"]
+This is more deterministic.
 
-                            page_data.append({
-                                "text": text,
-                                "bbox": {
-                                    "x0": bbox[0],
-                                    "y0": bbox[1],
-                                    "x1": bbox[2],
-                                    "y1": bbox[3]
-                                },
-                                "font": span["font"],
-                                "size": span["size"]
-                            })
+⸻
 
-        all_pages_data.append({
-            "page": page_num,
-            "texts": page_data
-        })
+⚡ Even Stronger Method (Best Hybrid)
+	1.	Detect boundary rectangles first.
+	2.	If found → use containment.
+	3.	Else → use clustering fallback.
 
-        # ---- Generate Overlay Image ----
-        pix = page.get_pixmap(dpi=dpi)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        draw = ImageDraw.Draw(img)
+This gives very high reliability.
 
-        scale_x = pix.width / page.rect.width
-        scale_y = pix.height / page.rect.height
+⸻
 
-        for item in page_data:
-            bbox = item["bbox"]
+🎯 If You Want the Most Stable Method
 
-            x0 = bbox["x0"] * scale_x
-            y0 = bbox["y0"] * scale_y
-            x1 = bbox["x1"] * scale_x
-            y1 = bbox["y1"] * scale_y
+I recommend:
 
-            draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
+Graph-based connected component clustering
 
-        overlay_path = os.path.join(
-            overlay_folder, f"page_{page_num + 1}_overlay.png"
-        )
-        img.save(overlay_path)
+Instead of raw DBSCAN.
 
-        print(f"Overlay saved: {overlay_path}")
-        print(f"Extracted {len(page_data)} text elements.")
+Because:
+	•	No eps tuning headache
+	•	Works naturally if geometry touches or is close
+	•	Very stable for CAD
 
-    # ---- Save JSON ----
-    with open(output_json, "w") as f:
-        json.dump(all_pages_data, f, indent=4)
+⸻
 
-    print(f"\nExtraction complete.")
-    print(f"Text data saved to: {output_json}")
-    print(f"Overlay images saved in: {overlay_folder}")
+🧠 Honest Truth
 
+View segmentation is fundamentally:
 
-# ---- RUN HERE ----
-if __name__ == "__main__":
-    pdf_path = "your_vector_pdf.pdf"  # 🔥 Change this
-    extract_text_and_generate_overlay(pdf_path)
+2D spatial connected component problem with noise removal
+
+Not text processing.
+
+Not CAD feature detection.
+
+Just spatial graph segmentation.
+
+⸻
+
+If you want, next I can give:
+	•	Clean production-level algorithm for border removal
+	•	Graph-based clustering code structure
+	•	How to auto-tune thresholds
+	•	Or how to combine DBSCAN + graph approach
+
+Tell me which one you want to build first.
+
+This is solvable — but only with proper geometric thinking.

@@ -1,0 +1,410 @@
+import numpy as np
+import pandas as pd
+from scipy.integrate import solve_ivp
+from scipy.interpolate import interp1d
+
+# =====================================================
+# 1. LOAD ISO ROAD PROFILE
+# =====================================================
+
+df = pd.read_excel("ISO_B_Road.xlsx")
+
+distance = df["distance"].values
+height   = df["height"].values
+
+# =====================================================
+# 2. VEHICLE SPEED
+# =====================================================
+
+speed = 20   # m/s (≈72 km/h)
+
+t = distance / speed
+
+# =====================================================
+# 3. INTERPOLATE ROAD
+# =====================================================
+
+road = interp1d(t, height, fill_value="extrapolate")
+
+# =====================================================
+# 4. AXLE GEOMETRY (example values)
+# =====================================================
+
+L1 = 3.5   # front → axle1
+L2 = 1.4   # axle1 → axle2
+
+delay1 = L1 / speed
+delay2 = (L1 + L2) / speed
+
+# =====================================================
+# 5. ROAD INPUTS FOR EACH AXLE
+# =====================================================
+
+Zrf  = road(t)
+Zr1  = road(t - delay1)
+Zr2  = road(t - delay2)
+
+Zr1L = Zr1
+Zr1R = Zr1
+Zr2L = Zr2
+Zr2R = Zr2
+
+# =====================================================
+# 6. SUSPENSION PARAMETERS
+# =====================================================
+
+Kf = 300000
+K2 = 500000
+K3 = 500000
+
+Cf = 20000
+C2 = 30000
+C3 = 30000
+
+M = 6000  # cabin mass
+
+# =====================================================
+# 7. ROAD FUNCTIONS FOR ODE
+# =====================================================
+
+road_f  = interp1d(t, Zrf,  fill_value="extrapolate")
+road_r1 = interp1d(t, Zr1L, fill_value="extrapolate")
+road_r2 = interp1d(t, Zr2L, fill_value="extrapolate")
+
+# =====================================================
+# 8. VEHICLE ODE MODEL
+# State vector:
+# x = [z, dz]
+# =====================================================
+
+def vehicle_ode(time, x):
+
+    z  = x[0]
+    dz = x[1]
+
+    zr_f = road_f(time)
+    zr_1 = road_r1(time)
+    zr_2 = road_r2(time)
+
+    # Example simplified force
+    force = (
+        -Kf*(z - zr_f)
+        -Cf*(dz)
+        -K2*(z - zr_1)
+        -C2*(dz)
+        -K3*(z - zr_2)
+        -C3*(dz)
+    )
+
+    ddz = force / M
+
+    return [dz, ddz]
+
+# =====================================================
+# 9. SOLVE ODE
+# =====================================================
+
+t_span = [t.min(), t.max()]
+t_eval = t
+
+x0 = [0,0]
+
+solution = solve_ivp(
+    vehicle_ode,
+    t_span,
+    x0,
+    t_eval=t_eval,
+    method="RK45"
+)
+
+# =====================================================
+# 10. EXTRACT STATES
+# =====================================================
+
+zc  = solution.y[0]
+vel = solution.y[1]
+
+# acceleration
+acc = np.gradient(vel, t)
+
+# =====================================================
+# 11. CREATE DATASET
+# =====================================================
+
+data = pd.DataFrame({
+
+    "t": t,
+
+    "Zrf": Zrf,
+    "Zr1L": Zr1L,
+    "Zr1R": Zr1R,
+    "Zr2L": Zr2L,
+    "Zr2R": Zr2R,
+
+    "Kf": Kf,
+    "K2": K2,
+    "K3": K3,
+
+    "Cf": Cf,
+    "C2": C2,
+    "C3": C3,
+
+    "zc": zc,
+    "vel": vel,
+    "acc": acc
+})
+
+# =====================================================
+# 12. SAVE DATASET
+# =====================================================
+
+data.to_csv("vehicle_dataset.csv", index=False)
+
+print("Dataset generated and saved as vehicle_dataset.csv")
+
+import torch
+import torch.nn as nn
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ==========================================================
+# 1. TIME SETTINGS
+# ==========================================================
+
+T = 10                # seconds
+fs = 200              # sampling frequency
+N = T * fs
+
+t = np.linspace(0, T, N).reshape(-1,1)
+
+# ==========================================================
+# 2. ROAD DISPLACEMENTS
+# ==========================================================
+
+Zrf  = 0.02*np.sin(2*np.pi*1.2*t)
+Zr1L = 0.02*np.sin(2*np.pi*1.1*t)
+Zr1R = 0.02*np.sin(2*np.pi*1.3*t)
+Zr2L = 0.02*np.sin(2*np.pi*1.4*t)
+Zr2R = 0.02*np.sin(2*np.pi*1.0*t)
+
+# ==========================================================
+# 3. SUSPENSION PARAMETERS
+# ==========================================================
+
+Kf = 300000
+K2 = 500000
+K3 = 500000
+
+Cf = 20000
+C2 = 30000
+C3 = 30000
+
+Kf_arr = np.ones_like(t) * Kf
+K2_arr = np.ones_like(t) * K2
+K3_arr = np.ones_like(t) * K3
+
+Cf_arr = np.ones_like(t) * Cf
+C2_arr = np.ones_like(t) * C2
+C3_arr = np.ones_like(t) * C3
+
+# ==========================================================
+# 4. BUILD INPUT MATRIX
+# ==========================================================
+
+X = np.hstack([
+
+t,
+Zrf,Zr1L,Zr1R,Zr2L,Zr2R,
+Kf_arr,K2_arr,K3_arr,
+Cf_arr,C2_arr,C3_arr
+
+])
+
+X = torch.tensor(X, dtype=torch.float32, requires_grad=True)
+
+# ==========================================================
+# 5. EXAMPLE SIMULATION OUTPUT (replace with real data)
+# ==========================================================
+
+zc = (
+0.08*Zrf
++0.04*Zr1L
+-0.03*Zr2L
++1e-7*Kf
+-1e-7*Cf
+)
+
+Y = torch.tensor(zc, dtype=torch.float32)
+
+# ==========================================================
+# 6. HYBRID PINN NETWORK
+# ==========================================================
+
+class HybridPINN(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.net = nn.Sequential(
+
+            nn.Linear(12,128),
+            nn.Tanh(),
+
+            nn.Linear(128,128),
+            nn.Tanh(),
+
+            nn.Linear(128,64),
+            nn.Tanh(),
+
+            nn.Linear(64,32),
+            nn.Tanh(),
+
+            nn.Linear(32,1)
+        )
+
+    def forward(self,x):
+
+        return self.net(x)
+
+model = HybridPINN()
+
+# ==========================================================
+# 7. PHYSICS PARAMETERS
+# ==========================================================
+
+M = 6000     # cabin mass
+
+# ==========================================================
+# 8. PHYSICS LOSS
+# ==========================================================
+
+def physics_loss(model,X):
+
+    pred = model(X)
+
+    z = pred
+
+    dz = torch.autograd.grad(
+        z,
+        X,
+        grad_outputs=torch.ones_like(z),
+        create_graph=True
+    )[0][:,0:1]
+
+    ddz = torch.autograd.grad(
+        dz,
+        X,
+        grad_outputs=torch.ones_like(dz),
+        create_graph=True
+    )[0][:,0:1]
+
+    Zrf = X[:,1:2]
+
+    Kf = X[:,6:7]
+    Cf = X[:,9:10]
+
+    force = -Kf*(z - Zrf) - Cf*dz
+
+    residual = M*ddz - force
+
+    return torch.mean(residual**2)
+
+# ==========================================================
+# 9. DATA LOSS
+# ==========================================================
+
+mse = nn.MSELoss()
+
+# ==========================================================
+# 10. OPTIMIZER
+# ==========================================================
+
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+# ==========================================================
+# 11. TRAINING
+# ==========================================================
+
+epochs = 3000
+loss_history = []
+
+for epoch in range(epochs):
+
+    optimizer.zero_grad()
+
+    pred = model(X)
+
+    data_loss = mse(pred,Y)
+
+    phys_loss = physics_loss(model,X)
+
+    loss = data_loss + 0.1*phys_loss
+
+    loss.backward()
+
+    optimizer.step()
+
+    loss_history.append(loss.item())
+
+    if epoch % 200 == 0:
+        print("Epoch:",epoch,"Loss:",loss.item())
+
+# ==========================================================
+# 12. TRAINING LOSS PLOT
+# ==========================================================
+
+plt.plot(loss_history)
+plt.title("Training Loss")
+plt.show()
+
+# ==========================================================
+# 13. PREDICTION
+# ==========================================================
+
+with torch.no_grad():
+    prediction = model(X)
+
+prediction = prediction.numpy()
+
+# ==========================================================
+# 14. RESPONSE PLOT
+# ==========================================================
+
+plt.plot(Y.numpy(),label="True")
+plt.plot(prediction,label="Predicted")
+plt.legend()
+plt.title("Cabin Displacement")
+plt.show()
+
+# ==========================================================
+# 15. CABIN ACCELERATION
+# ==========================================================
+
+z_tensor = model(X)
+
+dz = torch.autograd.grad(
+z_tensor,
+X,
+grad_outputs=torch.ones_like(z_tensor),
+create_graph=True
+)[0][:,0:1]
+
+ddz = torch.autograd.grad(
+dz,
+X,
+grad_outputs=torch.ones_like(dz),
+create_graph=True
+)[0][:,0:1]
+
+acc = ddz.detach().numpy()
+
+# ==========================================================
+# 16. RMS ACCELERATION
+# ==========================================================
+
+rms = np.sqrt(np.mean(acc**2))
+
+print("Cabin Acceleration RMS =",rms)
+
+

@@ -199,8 +199,103 @@ semantic associativity between drawing components is essential.
 If you want, I can next:
 	•	Turn this into a visual poster layout (boxes + arrows + diagram ideas)
 	•	Or refine it into LaTeX (conference poster format like beamerposter)
-	•	Or help you design the diagram for your YOLO + pipeline section
+	•	Or help you design the diagram for your YOLO + pipeline Got it — here’s a clean, unified bulletin-style section with one umbrella heading and subdivision only by technique, each written in crisp but detailed bullets, ready to drop into your poster:
 
+⸻
 
+🔷 Extraction Strategies & Technical Challenges
 
+⸻
+
+1. Image-Based Extraction Pipeline
+
+Approach
+	•	Input drawings (PDF) converted to raster images for processing
+	•	View detection performed to segment orthographic projections
+	•	Annotation detection using YOLOv8 to identify:
+	•	Dimensions
+	•	Symbols
+	•	Text elements
+	•	Detected views undergo preprocessing for geometric reconstruction:
+	•	Skeletonization to reduce shapes to centerlines
+	•	Stroke extraction to isolate individual primitives
+	•	Curve approximation using cubic Bézier fitting for vectorization
+
+Issues Faced
+	•	❌ Loss of geometric fidelity during raster-to-vector conversion
+	•	❌ Ambiguity in feature representation:
+	•	Lines and arcs often misinterpreted
+	•	Noise and discontinuities affect stroke extraction
+	•	❌ Approximation errors in Bézier fitting:
+	•	Does not preserve exact engineering geometry
+	•	❌ No guarantee of reconstruction accuracy, making it unreliable for precise validation
+
+⸻
+
+2. Document-Level Parsing (Docling + RapidOCR)
+
+Approach
+	•	Direct processing of drawing documents using OCR-based pipeline
+	•	RapidOCR used for extracting textual and annotation content
+	•	Layout inferred implicitly from detected text regions
+
+Issues Faced
+	•	❌ Weak view detection capability:
+	•	Unable to reliably separate multiple projections
+	•	❌ Inconsistent structural understanding:
+	•	Fails to capture relationships between drawing components
+	•	❌ Limited handling of graphical elements:
+	•	Focused primarily on text, not geometry
+	•	❌ Poor suitability for engineering drawings with dense and complex layouts
+
+⸻
+
+3. DXF-Based Extraction (ezdxf)
+
+Approach
+	•	Direct parsing of CAD-based DXF files using ezdxf library
+	•	Extraction of precise geometric entities:
+	•	Lines
+	•	Arcs
+	•	Circles
+	•	Polylines
+	•	Works on native vector data, avoiding rasterization losses
+
+Advantages
+	•	✅ High geometric accuracy (exact entity definitions)
+	•	✅ Reliable and lossless feature extraction
+	•	✅ Preserves original engineering geometry
+
+Issues Faced
+	•	❌ Absence of semantic associativity:
+	•	No linkage between:
+	•	Features ↔ Views
+	•	Features ↔ Annotations
+	•	❌ Lack of structural hierarchy in extracted data
+	•	❌ Attempted clustering-based grouping:
+	•	Inconsistent and non-generalizable results
+	•	❌ Makes it difficult to apply rule-based validation meaningfully
+
+⸻
+
+4. Core Bottleneck: Associativity Gap
+	•	❌ Fundamental challenge across all approaches is the lack of semantic linkage between:
+	•	Geometric features
+	•	Drawing views
+	•	Annotations and dimensions
+	•	❌ Without this mapping, checklist rules cannot be reliably applied
+	•	❌ Remains the primary barrier to achieving robust end-to-end automation
+
+👉 Insight:
+Accurate extraction alone is insufficient — contextual association of extracted elements is critical for engineering validation
+
+⸻
+
+This format will look very clean on a poster:
+	•	One strong heading
+	•	3 technique blocks + 1 insight block
+	•	Uniform bullet structure
+	•	Easy for reviewers to scan in <30 seconds
+
+If you want next, I can turn this into a visual flow diagram (boxes + arrows) which will make your poster even stronger.
 

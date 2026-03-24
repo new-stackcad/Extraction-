@@ -2,7 +2,204 @@ nothing
 
 https://1drv.ms/p/c/69187d6452360368/IQBOjNWZu5gUTq3SuUTN_ItcAc8H1FElWnkyq2vnEy0T9WQ?e=bxjT2e
 
+Got it — you want something that reads as one cohesive, polished block, not broken into too many fragments, and directly usable on a poster. Here’s a clean, aligned version with smooth flow and strong technical tone:
 
+⸻
+
+🔷 Automated Engineering Drawing Compliance Checker
+
+Problem Overview
+
+Engineering drawings must adhere to strict standards to ensure manufacturability and correctness. Current verification processes are largely manual, making them time-intensive, error-prone, and difficult to scale. This work aims to develop a fully automated drawing checker that evaluates engineering drawings against a predefined checklist and provides both compliance status and corrective feedback.
+
+⸻
+
+Methodology Overview
+
+The proposed system follows a structured pipeline that begins with information extraction from engineering drawings (PDF/DXF formats), followed by rule-based validation and feedback generation. Initially, drawings are processed to identify distinct views and detect annotations such as dimensions and symbols using a deep learning–based approach (YOLOv8). To further interpret geometric content, the extracted views are preprocessed through skeletonization and stroke analysis, and curves are approximated using cubic Bézier fitting to obtain vectorized representations.
+
+The extracted geometric and annotation data are then passed to a checklist-driven rule engine, which encodes engineering standards and evaluates the drawing for compliance. The system finally outputs a structured result indicating whether each criterion is satisfied, along with detailed feedback highlighting missing or incorrect elements.
+
+⸻
+
+Challenges and Design Exploration
+
+A key challenge encountered throughout this work is achieving reliable and semantically consistent extraction from diverse drawing formats.
+
+The image-based pipeline, combining view detection, annotation detection, and vectorization, offers flexibility but suffers from loss of geometric fidelity, leading to ambiguity in distinguishing features such as lines and arcs. This makes it unsuitable for precise validation tasks.
+
+An alternative OCR-based document parsing approach was explored using Docling with RapidOCR. While effective for textual extraction, it fails to robustly identify drawing structure and views, limiting its applicability for engineering diagrams.
+
+To address geometric inaccuracies, a DXF-based approach using the ezdxf library was implemented. This method successfully extracts geometric entities with high precision; however, it introduces a critical limitation — the absence of associativity between features, views, and annotations. Attempts to resolve this through clustering-based techniques did not yield reliable results.
+
+⸻
+
+Key Limitation
+
+The central bottleneck identified is not merely feature extraction, but the lack of semantic linkage between geometric elements, views, and annotations. This associativity is essential for meaningful checklist validation and remains an open challenge.
+
+⸻
+
+Current Status and Conclusion
+
+While a functional checklist evaluation engine has been successfully developed, the overall system is constrained by limitations in extraction reliability and semantic understanding across varied drawing inputs. Existing approaches present a trade-off between geometric accuracy and contextual interpretability, preventing robust end-to-end automation.
+
+This work highlights that the next step toward a fully automated solution lies in developing a hybrid framework that combines precise geometric extraction with context-aware association mechanisms, enabling accurate and scalable engineering drawing validation.
+
+⸻
+
+If you want, I can compress this further into a tight 50–60 word ultra-poster version or convert it into a diagram + minimal text layout, which is even more effective visually.
+
+
+
+Here’s a clean, poster-ready framework for your section. I’ll keep it structured, concise, and technically strong, exactly how research posters are expected.
+
+⸻
+
+🔷 Automated Engineering Drawing Compliance Checker
+
+🧩 Problem Statement
+
+Engineering drawings are critical for manufacturing and design validation. However, manual verification against standards and checklists is:
+	•	Time-consuming
+	•	Error-prone
+	•	Not scalable across large datasets
+
+👉 Objective:
+Develop a fully automated system that:
+	•	Extracts information from engineering drawings (PDF/DXF)
+	•	Validates them against a predefined checklist
+	•	Outputs:
+	•	✅ Compliance status (Satisfied / Not Satisfied)
+	•	⚠️ Detailed feedback for corrections
+
+⸻
+
+⚙️ Proposed Methodology (Pipeline Overview)
+
+Input: Engineering Drawing (PDF / DXF)
+
+Step 1: Information Extraction
+	•	View Detection → Identify orthographic views from drawings
+	•	Annotation Detection → Detect dimensions, symbols, and text using YOLOv8
+	•	Feature Extraction (Vectorization):
+	•	Skeletonization of drawing
+	•	Stroke detection
+	•	Curve fitting using Cubic Bézier curves
+
+⸻
+
+Step 2: Rule-Based Evaluation Engine
+	•	Encodes engineering checklist rules
+	•	Maps extracted features + annotations
+	•	Performs compliance validation
+
+⸻
+
+Step 3: Feedback Generation
+	•	Binary result: Pass / Fail
+	•	Detailed feedback:
+	•	Missing annotations
+	•	Incorrect dimensions
+	•	Violations of standards
+
+⸻
+
+⚠️ Challenges & Attempted Solutions
+
+🔍 1. Image-Based Extraction Pipeline
+
+Approach:
+	•	View detection + YOLOv8 annotation detection
+	•	Vectorization via skeletonization + Bézier fitting
+
+Issue:
+	•	❌ Loss of geometric fidelity
+	•	❌ Feature ambiguity (lines/arcs misinterpreted)
+	•	❌ No guarantee of exact reconstruction
+
+⸻
+
+📄 2. Document-Level Parsing (Docling + RapidOCR)
+
+Approach:
+	•	OCR-based extraction
+
+Issue:
+	•	❌ Poor view detection
+	•	❌ Inconsistent structure recognition
+	•	❌ Not suitable for complex engineering layouts
+
+⸻
+
+📐 3. DXF-Based Extraction (ezdxf)
+
+Approach:
+	•	Direct extraction of geometric entities (lines, arcs, circles)
+
+Advantages:
+	•	✅ High geometric accuracy
+	•	✅ Reliable feature extraction
+
+Issue:
+	•	❌ No associativity:
+	•	Features ↔ Views
+	•	Features ↔ Annotations
+	•	❌ Clustering-based mapping unreliable
+
+⸻
+
+🔗 4. Associativity Problem (Core Bottleneck)
+	•	Difficulty linking:
+	•	Geometry
+	•	Views
+	•	Annotations
+
+👉 This is critical for checklist validation and remains unresolved.
+
+⸻
+
+🧠 Key Insight
+
+Accurate feature extraction alone is insufficient —
+semantic associativity between drawing components is essential.
+
+⸻
+
+📊 System Status
+	•	✅ Checklist Rule Engine: Implemented and Functional
+	•	⚠️ Extraction Pipeline: Partially Reliable
+	•	❌ End-to-End Automation: Not yet robust
+
+⸻
+
+🧾 Conclusion
+	•	A fully automated drawing checker requires:
+	•	High-fidelity geometry extraction
+	•	Robust view and annotation association
+	•	Current approaches:
+	•	Image-based → flexible but inaccurate
+	•	DXF-based → accurate but lacks semantic linkage
+
+👉 Future Direction:
+	•	Hybrid pipeline:
+	•	Combine DXF precision + ML-based semantic understanding
+	•	Focus on:
+	•	Graph-based association
+	•	Context-aware feature linking
+
+⸻
+
+💡 (Optional Poster Tagline)
+
+“From Geometry to Semantics: The Missing Link in Automated Drawing Validation”
+
+⸻
+
+If you want, I can next:
+	•	Turn this into a visual poster layout (boxes + arrows + diagram ideas)
+	•	Or refine it into LaTeX (conference poster format like beamerposter)
+	•	Or help you design the diagram for your YOLO + pipeline section
 
 
 

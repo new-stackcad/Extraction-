@@ -118,3 +118,176 @@ print("Optimized RMS:", optimized)
 print("Improvement (%):", ((baseline - optimized) / baseline) * 100)
 
 https://1drv.ms/p/c/69187d6452360368/IQD2lhIrtLfjRaY-mf8N6iBOAQD9-5ViIl8UGzQ8xPKMGWM?e=MK4bCM
+
+def compute_true_cabin_rms(Kf, Cf, K2, K3):
+    """
+    Compute Cabin RMS using TRUE acceleration if available (QDD),
+    otherwise fallback to computed acceleration 'a'.
+
+    Priority:
+    1. Use QDD_list (true physical acceleration)
+    2. Fallback to finite-difference acceleration 'a'
+    """
+
+    # Run surrogate
+    _, a = run_surrogate(Kf, Cf, K2, K3)
+
+    cabin_a_rms = float("nan")
+
+    # ==============================
+    # TRY TRUE ACCELERATION (YOUR SNIPPET)
+    # ==============================
+    try:
+        if 'have_qdd' in globals() and 'QDD_list' in globals():
+            if have_qdd and len(QDD_list) > 0:
+
+                # Concatenate all true accelerations
+                QDD_true = torch.cat(QDD_list, dim=0)
+
+                # Extract cabin vertical acceleration
+                qdd_zc_true = QDD_true[:, idx_zc].detach().cpu().numpy()
+
+                # RMS (your exact formula)
+                cabin_a_rms = float(np.sqrt(np.mean(qdd_zc_true**2) + 1e-12))
+
+                return cabin_a_rms
+    except Exception:
+        pass  # fallback below
+
+    # ==============================
+    # FALLBACK (your current pipeline)
+    # ==============================
+    if a is not None and len(a) > 0:
+        a = np.asarray(a, dtype=np.float64)
+        cabin_a_rms = float(np.sqrt(np.mean(a**2) + 1e-12))
+
+    return cabin_a_rms
+
+
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+
+# ==============================
+# Create folder
+# ==============================
+save_dir = "optimization_results"
+os.makedirs(save_dir, exist_ok=True)
+
+# ==============================
+# Extract params
+# ==============================
+iterations = list(range(1, len(optimizer.res) + 1))
+
+kf_vals = [res["params"]["Kf"] for res in optimizer.res]
+cf_vals = [res["params"]["Cf"] for res in optimizer.res]
+k2_vals = [res["params"]["K2"] for res in optimizer.res]
+k3_vals = [res["params"]["K3"] for res in optimizer.res]
+
+# ==============================
+# TRUE RMS VALUES (IMPORTANT)
+# ==============================
+true_targets = []
+
+for res in optimizer.res:
+    p = res["params"]
+    val = compute_true_cabin_rms_from_a(
+        p["Kf"], p["Cf"], p["K2"], p["K3"]
+    )
+    true_targets.append(val)
+
+# ==============================
+# 1. Convergence Plot
+# ==============================
+best_vals = []
+current_best = float('inf')
+
+for t in true_targets:
+    if t < current_best:
+        current_best = t
+    best_vals.append(current_best)
+
+plt.figure()
+plt.plot(iterations, best_vals)
+plt.xlabel("Iteration")
+plt.ylabel("Best Cabin RMS")
+plt.title("Optimization Convergence (True RMS)")
+plt.grid()
+plt.savefig(f"{save_dir}/convergence.png")
+plt.show()
+
+# ==============================
+# 2. Parameter Evolution
+# ==============================
+plt.figure()
+plt.plot(iterations, kf_vals, label="Kf")
+plt.plot(iterations, cf_vals, label="Cf")
+plt.plot(iterations, k2_vals, label="K2")
+plt.plot(iterations, k3_vals, label="K3")
+plt.legend()
+plt.xlabel("Iteration")
+plt.ylabel("Parameter Value")
+plt.title("Parameter Evolution")
+plt.grid()
+plt.savefig(f"{save_dir}/parameter_evolution.png")
+plt.show()
+
+# ==============================
+# 3. Scatter Plots
+# ==============================
+def scatter_plot(x, y, xlabel, filename):
+    plt.figure()
+    plt.scatter(x, y)
+    plt.xlabel(xlabel)
+    plt.ylabel("Cabin RMS")
+    plt.title(f"{xlabel} vs Cabin RMS")
+    plt.grid()
+    plt.savefig(f"{save_dir}/{filename}")
+    plt.show()
+
+scatter_plot(kf_vals, true_targets, "Kf", "kf_vs_rms.png")
+scatter_plot(cf_vals, true_targets, "Cf", "cf_vs_rms.png")
+scatter_plot(k2_vals, true_targets, "K2", "k2_vs_rms.png")
+scatter_plot(k3_vals, true_targets, "K3", "k3_vs_rms.png")
+
+# ==============================
+# 4. Best Parameters
+# ==============================
+best_params = optimizer.max["params"]
+
+plt.figure()
+plt.bar(list(best_params.keys()), list(best_params.values()))
+plt.title("Optimal Parameters")
+plt.ylabel("Value")
+plt.savefig(f"{save_dir}/best_parameters.png")
+plt.show()
+
+# ==============================
+# 5. Before vs After (TRUE RMS)
+# ==============================
+baseline = compute_true_cabin_rms_from_a(
+    cfg["K_f"], cfg["C_f"], cfg["K_2"], cfg["K_3"]
+)
+
+opt = optimizer.max["params"]
+optimized = compute_true_cabin_rms_from_a(
+    opt["Kf"], opt["Cf"], opt["K2"], opt["K3"]
+)
+
+plt.figure()
+plt.bar(["Baseline", "Optimized"], [baseline, optimized])
+plt.title("Performance Improvement (True RMS)")
+plt.ylabel("Cabin RMS")
+plt.savefig(f"{save_dir}/comparison.png")
+plt.show()
+
+# ==============================
+# Summary
+# ==============================
+print("\n===== FINAL RESULTS (TRUE RMS) =====")
+print("Best Parameters:", best_params)
+print("Baseline RMS:", baseline)
+print("Optimized RMS:", optimized)
+print("Improvement (%):", ((baseline - optimized) / baseline) * 100)

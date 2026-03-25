@@ -210,3 +210,168 @@ print("\n===== FINAL RESULTS =====")
 print("Baseline RMS:", baseline)
 print("Optimized RMS:", optimized)
 print("Improvement (%):", ((baseline - optimized)/baseline)*100)
+
+
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+from bayes_opt import BayesianOptimization
+
+from Fv1_Surrogate import (
+    Surrogate,
+    build_road_signals,
+    STATE_NAMES,
+)
+
+# ==============================
+# LOAD MODEL
+# ==============================
+pkg = torch.load("Fv1_model_package.pth", map_location="cpu", weights_only=False)
+
+cfg = pkg["cfg"]
+state_dict = pkg["state_dict"]
+device = cfg["device"]
+
+model = Surrogate(cfg).to(device)
+model.load_state_dict(state_dict)
+model.eval()
+
+print("Loaded model with Dx =", cfg["_Dx"])
+
+# ==============================
+# ROAD DATA
+# ==============================
+def build_iso_dataframe_from_cfg(cfg):
+    road = build_road_signals(cfg)
+    return pd.DataFrame({
+        "t": road["t"],
+        "zr1L": road["zr1L"], "zr1R": road["zr1R"],
+        "zr2L": road["zr2L"], "zr2R": road["zr2R"],
+        "zr3L": road["zr3L"], "zr3R": road["zr3R"],
+    })
+
+df_iso = build_iso_dataframe_from_cfg(cfg)
+
+# ==============================
+# INPUT BUILDER (FIXED)
+# ==============================
+def build_input_from_iso(df, Kf, Cf, K2, K3):
+    WHEEL_COLS = ["zr1L","zr1R","zr2L","zr2R","zr3L","zr3R"]
+
+    wheels = df[WHEEL_COLS].values.astype(np.float32)
+
+    z1L,z1R,z2L,z2R,z3L,z3R = [df[c].values for c in WHEEL_COLS]
+
+    z_r1 = 0.5*(z1L + z1R)
+    z_r2 = 0.5*(z2L + z2R)
+    z_r3 = 0.5*(z3L + z3R)
+
+    phi1 = (z1L - z1R)/cfg["WT1"]
+    phi2 = (z2L - z2R)/cfg["WT2"]
+    phi3 = (z3L - z3R)/cfg["WT3"]
+
+    phiNRS2 = (cfg["beta_L2"]*cfg["L_DL2"] - cfg["beta_R2"]*cfg["L_DR2"]) / max(cfg["S_tf2"],1e-6)
+    phiNRS3 = (cfg["beta_L3"]*cfg["L_DL3"] - cfg["beta_R3"]*cfg["L_DR3"]) / max(cfg["S_tf3"],1e-6)
+
+    derived = np.stack([
+        z_r1, z_r2, z_r3,
+        phi1, phi2, phi3,
+        np.full_like(z_r1, phiNRS2),
+        np.full_like(z_r1, phiNRS3)
+    ], axis=-1).astype(np.float32)
+
+    X_base = np.concatenate([wheels, derived], axis=1)
+
+    # ADD PARAMETERS (CRITICAL FIX)
+    N = X_base.shape[0]
+    params = np.column_stack([
+        np.full(N, Kf),
+        np.full(N, Cf),
+        np.full(N, K2),
+        np.full(N, K3),
+    ]).astype(np.float32)
+
+    X = np.concatenate([X_base, params], axis=1)
+
+    t = df["t"].values.astype(np.float32)
+
+    t = torch.from_numpy(t).unsqueeze(-1).to(device)
+    X = torch.from_numpy(X).to(device)
+
+    return t, X
+
+# ==============================
+# SURROGATE (STABLE ACCELERATION)
+# ==============================
+def run_surrogate(Kf, Cf, K2, K3):
+    t, X = build_input_from_iso(df_iso, Kf, Cf, K2, K3)
+
+    with torch.no_grad():
+        Y = model(t, X)
+
+    zc = Y.cpu().numpy()[:, STATE_NAMES.index("z_c")]
+
+    dt = float(np.median(np.diff(df_iso["t"].values)))
+
+    # SMOOTHED SECOND DERIVATIVE
+    a = np.gradient(np.gradient(zc, dt), dt)
+
+    return float(np.sqrt(np.mean(a**2) + 1e-12))
+
+# ==============================
+# OBJECTIVE
+# ==============================
+def objective(Kf, Cf, K2, K3):
+    return -run_surrogate(Kf, Cf, K2, K3)
+
+# ==============================
+# OPTIMIZATION
+# ==============================
+bounds = {
+    "Kf": (0.8*cfg["K_f"], 1.2*cfg["K_f"]),
+    "Cf": (0.8*cfg["C_f"], 1.2*cfg["C_f"]),
+    "K2": (0.8*cfg["K_2"], 1.2*cfg["K_2"]),
+    "K3": (0.8*cfg["K_3"], 1.2*cfg["K_3"]),
+}
+
+optimizer = BayesianOptimization(f=objective, pbounds=bounds, random_state=123)
+
+print("Running Bayesian Optimization...")
+optimizer.maximize(init_points=5, n_iter=30)
+
+print("\nBest parameters found:")
+print(optimizer.max)
+
+# ==============================
+# PLOTS
+# ==============================
+os.makedirs("results", exist_ok=True)
+
+iterations = list(range(1, len(optimizer.res)+1))
+targets = [-r["target"] for r in optimizer.res]
+
+# Convergence
+best_vals = np.minimum.accumulate(targets)
+
+plt.figure()
+plt.plot(iterations, best_vals)
+plt.title("Convergence")
+plt.grid()
+plt.savefig("results/convergence.png")
+plt.show()
+
+# Comparison
+baseline = run_surrogate(cfg["K_f"], cfg["C_f"], cfg["K_2"], cfg["K_3"])
+opt = optimizer.max["params"]
+optimized = run_surrogate(opt["Kf"], opt["Cf"], opt["K2"], opt["K3"])
+
+plt.figure()
+plt.bar(["Baseline", "Optimized"], [baseline, optimized])
+plt.title("Performance")
+plt.savefig("results/comparison.png")
+plt.show()
+
+print("\nBaseline RMS:", baseline)
+print("Optimized RMS:", optimized)

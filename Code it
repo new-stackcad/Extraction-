@@ -1,0 +1,120 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+
+# ==============================
+# Create folder to save plots
+# ==============================
+save_dir = "optimization_results"
+os.makedirs(save_dir, exist_ok=True)
+
+# ==============================
+# Extract optimization data
+# ==============================
+iterations = list(range(1, len(optimizer.res) + 1))
+
+targets = [res["target"] for res in optimizer.res]
+
+kf_vals = [res["params"]["Kf"] for res in optimizer.res]
+cf_vals = [res["params"]["Cf"] for res in optimizer.res]
+k2_vals = [res["params"]["K2"] for res in optimizer.res]
+k3_vals = [res["params"]["K3"] for res in optimizer.res]
+
+# ==============================
+# 1. Convergence Plot
+# ==============================
+best_vals = []
+current_best = float('-inf')
+
+for t in targets:
+    if t > current_best:
+        current_best = t
+    best_vals.append(current_best)
+
+plt.figure()
+plt.plot(iterations, best_vals)
+plt.xlabel("Iteration")
+plt.ylabel("Best Objective Value")
+plt.title("Optimization Convergence")
+plt.grid()
+plt.savefig(f"{save_dir}/convergence.png")
+plt.show()
+
+# ==============================
+# 2. Parameter Evolution
+# ==============================
+plt.figure()
+plt.plot(iterations, kf_vals, label="Kf")
+plt.plot(iterations, cf_vals, label="Cf")
+plt.plot(iterations, k2_vals, label="K2")
+plt.plot(iterations, k3_vals, label="K3")
+plt.legend()
+plt.xlabel("Iteration")
+plt.ylabel("Parameter Value")
+plt.title("Parameter Evolution")
+plt.grid()
+plt.savefig(f"{save_dir}/parameter_evolution.png")
+plt.show()
+
+# ==============================
+# 3. Scatter: Parameter vs Objective
+# ==============================
+def scatter_plot(x, y, xlabel, filename):
+    plt.figure()
+    plt.scatter(x, y)
+    plt.xlabel(xlabel)
+    plt.ylabel("Objective")
+    plt.title(f"{xlabel} vs Objective")
+    plt.grid()
+    plt.savefig(f"{save_dir}/{filename}")
+    plt.show()
+
+scatter_plot(kf_vals, targets, "Kf", "kf_vs_obj.png")
+scatter_plot(cf_vals, targets, "Cf", "cf_vs_obj.png")
+scatter_plot(k2_vals, targets, "K2", "k2_vs_obj.png")
+scatter_plot(k3_vals, targets, "K3", "k3_vs_obj.png")
+
+# ==============================
+# 4. Best Parameters Bar Plot
+# ==============================
+best_params = optimizer.max["params"]
+
+names = list(best_params.keys())
+values = list(best_params.values())
+
+plt.figure()
+plt.bar(names, values)
+plt.title("Optimal Parameters")
+plt.ylabel("Value")
+plt.savefig(f"{save_dir}/best_parameters.png")
+plt.show()
+
+# ==============================
+# 5. Before vs After Comparison
+# ==============================
+# Baseline (original config)
+baseline = run_surrogate(
+    cfg["K_f"], cfg["C_f"], cfg["K_2"], cfg["K_3"]
+)
+
+# Optimized
+opt = optimizer.max["params"]
+optimized = run_surrogate(opt["Kf"], opt["Cf"], opt["K2"], opt["K3"])
+
+plt.figure()
+plt.bar(["Baseline", "Optimized"], [baseline, optimized])
+plt.title("Performance Improvement")
+plt.ylabel("Cabin RMS")
+plt.savefig(f"{save_dir}/comparison.png")
+plt.show()
+
+# ==============================
+# Print summary
+# ==============================
+print("\n===== FINAL RESULTS =====")
+print("Best Parameters:", best_params)
+print("Baseline RMS:", baseline)
+print("Optimized RMS:", optimized)
+print("Improvement (%):", ((baseline - optimized) / baseline) * 100)
+
+https://1drv.ms/p/c/69187d6452360368/IQD2lhIrtLfjRaY-mf8N6iBOAQD9-5ViIl8UGzQ8xPKMGWM?e=MK4bCM
